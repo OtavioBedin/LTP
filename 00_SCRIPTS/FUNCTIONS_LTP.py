@@ -664,3 +664,178 @@ def matriz_cortes_horas(bd_LTP_filtrado):
     wide = wide[['UNID_PROD', 'ALOC_REC'] + ordered_cols]
 
     return wide
+# *************************# Retorno da NEC_COMP_PCS para a estrutura LTP #********************************
+def atualizar_ltp_comp_nec_pcs(bd_LTP_M1, bd_nec_comp_expl):
+
+        # Agregar campos UNID_PROD, COD_INSUMO, NEC_LIQ_PCS
+        bd_nec_comp_expl_agreg = (
+            bd_nec_comp_expl
+            .groupby(["UNID_PROD", "COD_INSUMO"], as_index=False)["NEC_LIQ_PCS"]
+            .sum()
+        )
+        
+        # Faz o merge entre bd_LTP_M1 e bd_nec_comp_expl_agreg
+        bd_LTP_M1 = bd_LTP_M1.merge(
+            bd_nec_comp_expl_agreg,
+            left_on=["UNID_FAT", "COD_PROD"],
+            right_on=["UNID_PROD", "COD_INSUMO"],
+            how="left",
+            suffixes=("", "_eliminar")
+        )
+
+        # Atualiza o campo LTP_COMP_NEC_PCS com NEC_LIQ_PCS quando existir
+        bd_LTP_M1["LTP_COMP_NEC_PCS"] = bd_LTP_M1["NEC_LIQ_PCS"].fillna(bd_LTP_M1["LTP_COMP_NEC_PCS"])
+
+        # Remove coluna auxiliar COD_INSUMO se não precisar mais
+        bd_LTP_M1 = bd_LTP_M1.drop(columns=["COD_INSUMO", "NEC_LIQ_PCS", "UNID_PROD_eliminar"])
+
+        return bd_LTP_M1
+# *************************# Decomposicao NEC_PCS para precisao de corte #********************************
+def calcular_decomposicao_nec_pcs_para_precisao_corte(bd_LTP_M1):
+
+        # Coluna Total Estoque para otimizar e reduzir tamanho dos próximos calculos que debitam estoque
+        ET_PCS = (
+            bd_LTP_M1['LTP_EST_INI_PCS'] +
+            bd_LTP_M1['LTP_EST_TRANS_PCS'] +
+            bd_LTP_M1['TRIANG_TOT_PCS'] +
+            bd_LTP_M1['ORI_TOT_PCS']
+        )
+        
+        bd_LTP_M1['ET_PCS'] = np.where(
+            bd_LTP_M1['NEC_PCS'] == 0,
+            0,
+            ET_PCS
+        )
+        
+        # Calculos identificando quantidades PCS não cobertas por estoque e que devem ser cortadas
+        C_ARR_PCS = (bd_LTP_M1['LTP_CART_ARR_MES_ANT'] - bd_LTP_M1['ET_PCS']).clip(lower=0)
+        
+        bd_LTP_M1['C_ARR_PCS'] = np.where(
+            bd_LTP_M1['NEC_PCS'] == 0,
+            0,
+            C_ARR_PCS
+        )
+        
+        C_AT_PCS = (
+            (bd_LTP_M1['LTP_CART_ARR_MES_ANT'] + bd_LTP_M1['LTP_CART_MES_ATUAL'])
+            - bd_LTP_M1['ET_PCS']
+        ).clip(lower=0) - bd_LTP_M1['C_ARR_PCS']
+        
+        bd_LTP_M1['C_AT_PCS'] = np.where(
+            bd_LTP_M1['NEC_PCS'] == 0,
+            0,
+            C_AT_PCS
+        )
+        
+        PV_PCS = (
+            (bd_LTP_M1['LTP_CART_ARR_MES_ANT'] +
+             bd_LTP_M1['LTP_CART_MES_ATUAL'] +
+             bd_LTP_M1['LTP_SALDO_PREV_PCS'])
+            - bd_LTP_M1['ET_PCS']
+        ).clip(lower=0) - (bd_LTP_M1['C_ARR_PCS'] + bd_LTP_M1['C_AT_PCS'])
+        
+        bd_LTP_M1['PV_PCS'] = np.where(
+            bd_LTP_M1['NEC_PCS'] == 0,
+            0,
+            PV_PCS
+        )
+        
+        PV_PROX_PCS = np.where(
+            bd_LTP_M1['MESMA_REG'] == 'NAO',
+            (
+                (bd_LTP_M1['LTP_CART_ARR_MES_ANT'] +
+                 bd_LTP_M1['LTP_CART_MES_ATUAL'] +
+                 bd_LTP_M1['LTP_SALDO_PREV_PCS'] +
+                 bd_LTP_M1['LTP_SALDO_PREV_PROX_MES_PCS'])
+                - bd_LTP_M1['ET_PCS']
+            ).clip(lower=0)
+            - (bd_LTP_M1['C_ARR_PCS'] +
+               bd_LTP_M1['C_AT_PCS'] +
+               bd_LTP_M1['PV_PCS']),
+            0
+        )
+        
+        bd_LTP_M1['PV_PROX_PCS'] = np.where(
+            bd_LTP_M1['NEC_PCS'] == 0,
+            0,
+            PV_PROX_PCS
+        )
+
+        bd_LTP_M1['ES_PCS'] = np.where(
+            bd_LTP_M1['NEC_PCS'] == 0,
+            0,
+            np.where(
+                bd_LTP_M1['MESMA_REG'] == 'NAO',
+                np.maximum(
+                    (bd_LTP_M1['LTP_CART_ARR_MES_ANT'] +
+                     bd_LTP_M1['LTP_CART_MES_ATUAL'] +
+                     bd_LTP_M1['LTP_SALDO_PREV_PCS'] +
+                     bd_LTP_M1['LTP_SALDO_PREV_PROX_MES_PCS'] +
+                     bd_LTP_M1['LTP_EST_SEG_PCS'])
+                    - bd_LTP_M1['ET_PCS']
+                    - (bd_LTP_M1['C_ARR_PCS'] +
+                       bd_LTP_M1['C_AT_PCS'] +
+                       bd_LTP_M1['PV_PCS'] +
+                       bd_LTP_M1['PV_PROX_PCS']),
+                    0
+                ),
+                np.maximum(
+                    (bd_LTP_M1['LTP_CART_ARR_MES_ANT'] +
+                     bd_LTP_M1['LTP_CART_MES_ATUAL'] +
+                     bd_LTP_M1['LTP_SALDO_PREV_PCS'] +
+                     bd_LTP_M1['LTP_EST_SEG_PCS'])
+                    - bd_LTP_M1['ET_PCS']
+                    - (bd_LTP_M1['C_ARR_PCS'] +
+                       bd_LTP_M1['C_AT_PCS'] +
+                       bd_LTP_M1['PV_PCS'] +
+                       bd_LTP_M1['PV_PROX_PCS']),
+                    0
+                )
+            )
+        )
+        
+        DIF_LM_PCS = (
+            bd_LTP_M1['NEC_PCS']
+            - (bd_LTP_M1['C_ARR_PCS'] +
+               bd_LTP_M1['C_AT_PCS'] +
+               bd_LTP_M1['PV_PCS'] +
+               bd_LTP_M1['PV_PROX_PCS'] +
+               bd_LTP_M1['ES_PCS'])
+        )
+        
+        bd_LTP_M1['DIF_LM_PCS'] = np.where(
+            bd_LTP_M1['NEC_PCS'] <= 0,
+            0,
+            np.where(
+                DIF_LM_PCS > bd_LTP_M1['LOTE_MIN'],
+                bd_LTP_M1['LOTE_MIN'],
+                DIF_LM_PCS
+            )
+        )
+        
+        DIF_EMB_PCS = (
+            bd_LTP_M1['NEC_PCS']
+            - (bd_LTP_M1['C_ARR_PCS'] +
+               bd_LTP_M1['C_AT_PCS'] +
+               bd_LTP_M1['PV_PCS'] +
+               bd_LTP_M1['PV_PROX_PCS'] +
+               bd_LTP_M1['ES_PCS'] +
+               bd_LTP_M1['DIF_LM_PCS'])
+        )
+        
+        bd_LTP_M1['DIF_EMB_PCS'] = np.where(
+            bd_LTP_M1['NEC_PCS'] <= 0,
+            0,
+            DIF_EMB_PCS
+        )
+        
+        # Transformar em HR as colunas calculadas em PCS para cortes
+        bd_LTP_M1['C_ARR_HR'] = bd_LTP_M1['C_ARR_PCS'] / bd_LTP_M1['PCS_HORA']
+        bd_LTP_M1['C_AT_HR'] = bd_LTP_M1['C_AT_PCS'] / bd_LTP_M1['PCS_HORA']
+        bd_LTP_M1['PV_HR'] = bd_LTP_M1['PV_PCS'] / bd_LTP_M1['PCS_HORA']
+        bd_LTP_M1['PV_PROX_HR'] = bd_LTP_M1['PV_PROX_PCS'] / bd_LTP_M1['PCS_HORA']
+        bd_LTP_M1['ES_HR'] = bd_LTP_M1['ES_PCS'] / bd_LTP_M1['PCS_HORA']
+        bd_LTP_M1['DIF_LM_HR'] = bd_LTP_M1['DIF_LM_PCS'] / bd_LTP_M1['PCS_HORA']
+        bd_LTP_M1['DIF_EMB_HR'] = bd_LTP_M1['DIF_EMB_PCS'] / bd_LTP_M1['PCS_HORA']
+
+        return bd_LTP_M1
