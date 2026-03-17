@@ -633,7 +633,7 @@ def cria_bd_mat_cortes_FER(bd_LTP):
 
     return bd_mat_cortes
 # --------------------- ### Criar Matriz de Horas para definir aonde aplicar os cortes ### ---------------------
-def matriz_cortes_horas(bd_LTP_filtrado, col_chave):
+def matriz_logica_cortes_horas(bd_LTP_filtrado, col_chave):
     
     df = bd_LTP_filtrado[
         ['UNID_PROD', col_chave, 'MESMA_REG',
