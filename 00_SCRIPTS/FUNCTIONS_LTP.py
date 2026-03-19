@@ -213,8 +213,26 @@ def calcular_demais_campos(df):
     df['NEC_ESTOURO_PCS'] = 0  # inicializa com zero
     df.loc[mask, 'NEC_ESTOURO_PCS'] = df.loc[mask, 'ID_PROD_UNID_FAT'].map(nec_nao_atend_dict).fillna(0).astype(df['NEC_ESTOURO_PCS'].dtype)
     
+    # ------------------------------------------------------------------------------------------------
+    # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
+    
+    # 1. Classificar pela coluna IND
+    df = df.sort_values('IND').reset_index(drop=True)
+    
+    # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS
+    tab_NEC_ESTOURO_PCS_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS']].copy()
+    
+    # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
+    tab_NEC_ESTOURO_PCS_auxiliar = tab_NEC_ESTOURO_PCS_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
+    
+    # 4. Retornar o valor de NEC_ESTOURO_PCS da tabela tab_NEC_ESTOURO_PCS_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
+    nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS'].to_dict()
+    df['NEC_ESTOURO_PCS'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS'].dtype)
+    
+    # ------------------------------------------------------------------------------------------------
+    
     # Criar coluna NEC_ESTOURO_HR
-    df['NEC_ESTOURO_HR'] = (df['NEC_ESTOURO_PCS'] / df['PCS_HORA']).replace([np.inf, -np.inf], 0).fillna(0)  
+    df['NEC_ESTOURO_HR'] = (df['NEC_ESTOURO_PCS'] / df['PCS_HORA']).replace([np.inf, -np.inf], 0).fillna(0)
     
     # Criar tabela auxiliar chamada tab_NEC_ARRASTE_PCS onde a tabela vai ter as colunas ID_PROD_UNID_FAT, ID_PROD_UNID_FAT_ANT, EST_SEG_PCS, NEC_ESTOURO_PCS, criar campo NEC_ARRASTE_PCS calculando se NEC_ESTOURO_PCS - EST_SEG_PCS for menor ou igual a zero , atribuir 0, senão atribuir NEC_ESTOURO_PCS - EST_SEG_PCS
     tab_NEC_ESTOURO_PCS = df[['ID_PROD_UNID_FAT', 'ID_PROD_UNID_FAT_ANT', 'EST_SEG_PCS', 'NEC_ESTOURO_PCS']].copy()
@@ -244,14 +262,51 @@ def calcular_demais_campos(df):
     mask = (df['PRIOR_MATPAR'] == 1) & (df['ID_ULT_PRIORI'].notna())
     df['NEC_ESTOURO_PCS_REC'] = 0
     df.loc[mask, 'NEC_ESTOURO_PCS_REC'] = df.loc[mask, 'ID_PROD_UNID_FAT'].map(nec_estouro_rec_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_REC'].dtype)
+    
+    # ------------------------------------------------------------------------------------------------
+    # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
+    
+    # 1. Classificar pela coluna IND
+    df = df.sort_values('IND').reset_index(drop=True)
+    
+    # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS_REC
+    tab_NEC_ESTOURO_PCS_REC_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS_REC']].copy()
+    
+    # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
+    tab_NEC_ESTOURO_PCS_REC_auxiliar = tab_NEC_ESTOURO_PCS_REC_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
+    
+    # 4. Retornar o valor de NEC_ESTOURO_PCS_REC da tabela tab_NEC_ESTOURO_PCS_REC_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
+    nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_REC_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS_REC'].to_dict()
+    df['NEC_ESTOURO_PCS_REC'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_REC'].dtype)
+    
+    # ------------------------------------------------------------------------------------------------
+    
     df['NEC_ESTOURO_HR_REC'] = (df['NEC_ESTOURO_PCS_REC'] / df['PCS_HORA']).replace([np.inf, -np.inf], 0).fillna(0)
     
-
     # Criar coluna NEC_ESTOURO_PCS_FER no df, conforme regra: Se PRIOR_MATPAR for 1 e ID_ULT_PRIORI não for vazio, buscar o valor NEC_N_ATEND_PCS_REC, da tabela tab_NEC_N_ATEND_PCS_REC_FER, pelo campo df ID_PROD_UNID_FAT = tab_NEC_N_ATEND_PCS_REC_FER ID_ULT_PRIORI, senão atribuir 0
     nec_estouro_fer_dict = tab_NEC_N_ATEND_PCS_REC_FER.set_index('ID_ULT_PRIORI')['NEC_N_ATEND_PCS_FER'].to_dict()
     mask = (df['PRIOR_MATPAR'] == 1) & (df['ID_ULT_PRIORI'].notna())
     df['NEC_ESTOURO_PCS_FER'] = 0
     df.loc[mask, 'NEC_ESTOURO_PCS_FER'] = df.loc[mask, 'ID_PROD_UNID_FAT'].map(nec_estouro_fer_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_FER'].dtype)
+    
+        # ------------------------------------------------------------------------------------------------
+    # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
+    
+    # 1. Classificar pela coluna IND
+    df = df.sort_values('IND').reset_index(drop=True)
+    
+    # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS_FER
+    tab_NEC_ESTOURO_PCS_FER_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS_FER']].copy()
+    
+    # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
+    tab_NEC_ESTOURO_PCS_FER_auxiliar = tab_NEC_ESTOURO_PCS_FER_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
+    
+    # 4. Retornar o valor de NEC_ESTOURO_PCS_FER da tabela tab_NEC_ESTOURO_PCS_FER_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
+    nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_FER_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS_FER'].to_dict()
+    df['NEC_ESTOURO_PCS_FER'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_FER'].dtype)
+    
+    # ------------------------------------------------------------------------------------------------
+    
     df['NEC_ESTOURO_HR_FER'] = (df['NEC_ESTOURO_PCS_FER'] / df['PCS_HORA']).replace([np.inf, -np.inf], 0).fillna(0)
 
     # Criar coluna %_OCUP_REC, conforme regra: Se MIN(HOR_REC, HOR_CAP) for <= 0, atribuir 0, senão atribuir SUM(NEC_ESTOURO_PCS, NEC_ATEND_PCS) dividir por PCS_HORA, e depois dividir tudo isso por HOR_REC
@@ -633,9 +688,9 @@ def cria_bd_mat_cortes_FER(bd_LTP):
 
     return bd_mat_cortes
 # --------------------- ### Criar Matriz de Horas para definir aonde aplicar os cortes ### ---------------------
-def matriz_logica_cortes_horas(bd_LTP_filtrado, col_chave):
+def matriz_logica_cortes_horas(bd_LTP, col_chave):
     
-    df = bd_LTP_filtrado[
+    df = bd_LTP[
         ['UNID_PROD', col_chave, 'MESMA_REG',
          'ES_HR', 'PV_PROX_HR', 'PV_HR', 'C_AT_HR', 'C_ARR_HR']
     ].copy()
@@ -692,7 +747,7 @@ def matriz_logica_cortes_horas(bd_LTP_filtrado, col_chave):
 
     return wide
 # *************************# Retorno da NEC_COMP_PCS para a estrutura LTP #********************************
-def atualizar_ltp_comp_nec_pcs(bd_LTP_MES, bd_nec_comp_expl):
+def atualizar_ltp_comp_nec_pcs(bd_LTP, bd_nec_comp_expl):
 
         # Agregar campos UNID_PROD, COD_INSUMO, NEC_LIQ_PCS
         bd_nec_comp_expl_agreg = (
@@ -701,8 +756,8 @@ def atualizar_ltp_comp_nec_pcs(bd_LTP_MES, bd_nec_comp_expl):
             .sum()
         )
         
-        # Faz o merge entre bd_LTP_MES e bd_nec_comp_expl_agreg
-        bd_LTP_MES = bd_LTP_MES.merge(
+        # Faz o merge entre bd_LTP e bd_nec_comp_expl_agreg
+        bd_LTP = bd_LTP.merge(
             bd_nec_comp_expl_agreg,
             left_on=["UNID_FAT", "COD_PROD"],
             right_on=["UNID_PROD", "COD_INSUMO"],
@@ -711,158 +766,158 @@ def atualizar_ltp_comp_nec_pcs(bd_LTP_MES, bd_nec_comp_expl):
         )
 
         # Atualiza o campo LTP_COMP_NEC_PCS com NEC_LIQ_PCS quando existir
-        bd_LTP_MES["LTP_COMP_NEC_PCS"] = bd_LTP_MES["NEC_LIQ_PCS"].fillna(bd_LTP_MES["LTP_COMP_NEC_PCS"])
+        bd_LTP["LTP_COMP_NEC_PCS"] = bd_LTP["NEC_LIQ_PCS"].fillna(bd_LTP["LTP_COMP_NEC_PCS"])
 
         # Remove coluna auxiliar COD_INSUMO se não precisar mais
-        bd_LTP_MES = bd_LTP_MES.drop(columns=["COD_INSUMO", "NEC_LIQ_PCS", "UNID_PROD_eliminar"])
+        bd_LTP = bd_LTP.drop(columns=["COD_INSUMO", "NEC_LIQ_PCS", "UNID_PROD_eliminar"])
 
-        return bd_LTP_MES
+        return bd_LTP
 # *************************# Decomposicao NEC_PCS para precisao de corte #********************************
-def calcular_decomposicao_nec_pcs_para_precisao_corte(bd_LTP_MES):
+def calcular_decomposicao_nec_pcs_para_precisao_corte(bd_LTP):
 
         # Coluna Total Estoque para otimizar e reduzir tamanho dos próximos calculos que debitam estoque
         ET_PCS = (
-            bd_LTP_MES['LTP_EST_INI_PCS'] +
-            bd_LTP_MES['LTP_EST_TRANS_PCS'] +
-            bd_LTP_MES['TRIANG_TOT_PCS'] +
-            bd_LTP_MES['ORI_TOT_PCS']
+            bd_LTP['LTP_EST_INI_PCS'] +
+            bd_LTP['LTP_EST_TRANS_PCS'] +
+            bd_LTP['TRIANG_TOT_PCS'] +
+            bd_LTP['ORI_TOT_PCS']
         )
         
-        bd_LTP_MES['ET_PCS'] = np.where(
-            bd_LTP_MES['NEC_PCS'] == 0,
+        bd_LTP['ET_PCS'] = np.where(
+            bd_LTP['NEC_PCS'] == 0,
             0,
             ET_PCS
         )
         
         # Calculos identificando quantidades PCS não cobertas por estoque e que devem ser cortadas
-        C_ARR_PCS = (bd_LTP_MES['LTP_CART_ARR_MES_ANT'] - bd_LTP_MES['ET_PCS']).clip(lower=0)
+        C_ARR_PCS = (bd_LTP['LTP_CART_ARR_MES_ANT'] - bd_LTP['ET_PCS']).clip(lower=0)
         
-        bd_LTP_MES['C_ARR_PCS'] = np.where(
-            bd_LTP_MES['NEC_PCS'] == 0,
+        bd_LTP['C_ARR_PCS'] = np.where(
+            bd_LTP['NEC_PCS'] == 0,
             0,
             C_ARR_PCS
         )
         
         C_AT_PCS = (
-            (bd_LTP_MES['LTP_CART_ARR_MES_ANT'] + bd_LTP_MES['LTP_CART_MES_ATUAL'])
-            - bd_LTP_MES['ET_PCS']
-        ).clip(lower=0) - bd_LTP_MES['C_ARR_PCS']
+            (bd_LTP['LTP_CART_ARR_MES_ANT'] + bd_LTP['LTP_CART_MES_ATUAL'])
+            - bd_LTP['ET_PCS']
+        ).clip(lower=0) - bd_LTP['C_ARR_PCS']
         
-        bd_LTP_MES['C_AT_PCS'] = np.where(
-            bd_LTP_MES['NEC_PCS'] == 0,
+        bd_LTP['C_AT_PCS'] = np.where(
+            bd_LTP['NEC_PCS'] == 0,
             0,
             C_AT_PCS
         )
         
         PV_PCS = (
-            (bd_LTP_MES['LTP_CART_ARR_MES_ANT'] +
-             bd_LTP_MES['LTP_CART_MES_ATUAL'] +
-             bd_LTP_MES['LTP_SALDO_PREV_PCS'])
-            - bd_LTP_MES['ET_PCS']
-        ).clip(lower=0) - (bd_LTP_MES['C_ARR_PCS'] + bd_LTP_MES['C_AT_PCS'])
+            (bd_LTP['LTP_CART_ARR_MES_ANT'] +
+             bd_LTP['LTP_CART_MES_ATUAL'] +
+             bd_LTP['LTP_SALDO_PREV_PCS'])
+            - bd_LTP['ET_PCS']
+        ).clip(lower=0) - (bd_LTP['C_ARR_PCS'] + bd_LTP['C_AT_PCS'])
         
-        bd_LTP_MES['PV_PCS'] = np.where(
-            bd_LTP_MES['NEC_PCS'] == 0,
+        bd_LTP['PV_PCS'] = np.where(
+            bd_LTP['NEC_PCS'] == 0,
             0,
             PV_PCS
         )
         
         PV_PROX_PCS = np.where(
-            bd_LTP_MES['MESMA_REG'] == 'NAO',
+            bd_LTP['MESMA_REG'] == 'NAO',
             (
-                (bd_LTP_MES['LTP_CART_ARR_MES_ANT'] +
-                 bd_LTP_MES['LTP_CART_MES_ATUAL'] +
-                 bd_LTP_MES['LTP_SALDO_PREV_PCS'] +
-                 bd_LTP_MES['LTP_SALDO_PREV_PROX_MES_PCS'])
-                - bd_LTP_MES['ET_PCS']
+                (bd_LTP['LTP_CART_ARR_MES_ANT'] +
+                 bd_LTP['LTP_CART_MES_ATUAL'] +
+                 bd_LTP['LTP_SALDO_PREV_PCS'] +
+                 bd_LTP['LTP_SALDO_PREV_PROX_MES_PCS'])
+                - bd_LTP['ET_PCS']
             ).clip(lower=0)
-            - (bd_LTP_MES['C_ARR_PCS'] +
-               bd_LTP_MES['C_AT_PCS'] +
-               bd_LTP_MES['PV_PCS']),
+            - (bd_LTP['C_ARR_PCS'] +
+               bd_LTP['C_AT_PCS'] +
+               bd_LTP['PV_PCS']),
             0
         )
         
-        bd_LTP_MES['PV_PROX_PCS'] = np.where(
-            bd_LTP_MES['NEC_PCS'] == 0,
+        bd_LTP['PV_PROX_PCS'] = np.where(
+            bd_LTP['NEC_PCS'] == 0,
             0,
             PV_PROX_PCS
         )
 
-        bd_LTP_MES['ES_PCS'] = np.where(
-            bd_LTP_MES['NEC_PCS'] == 0,
+        bd_LTP['ES_PCS'] = np.where(
+            bd_LTP['NEC_PCS'] == 0,
             0,
             np.where(
-                bd_LTP_MES['MESMA_REG'] == 'NAO',
+                bd_LTP['MESMA_REG'] == 'NAO',
                 np.maximum(
-                    (bd_LTP_MES['LTP_CART_ARR_MES_ANT'] +
-                     bd_LTP_MES['LTP_CART_MES_ATUAL'] +
-                     bd_LTP_MES['LTP_SALDO_PREV_PCS'] +
-                     bd_LTP_MES['LTP_SALDO_PREV_PROX_MES_PCS'] +
-                     bd_LTP_MES['LTP_EST_SEG_PCS'])
-                    - bd_LTP_MES['ET_PCS']
-                    - (bd_LTP_MES['C_ARR_PCS'] +
-                       bd_LTP_MES['C_AT_PCS'] +
-                       bd_LTP_MES['PV_PCS'] +
-                       bd_LTP_MES['PV_PROX_PCS']),
+                    (bd_LTP['LTP_CART_ARR_MES_ANT'] +
+                     bd_LTP['LTP_CART_MES_ATUAL'] +
+                     bd_LTP['LTP_SALDO_PREV_PCS'] +
+                     bd_LTP['LTP_SALDO_PREV_PROX_MES_PCS'] +
+                     bd_LTP['LTP_EST_SEG_PCS'])
+                    - bd_LTP['ET_PCS']
+                    - (bd_LTP['C_ARR_PCS'] +
+                       bd_LTP['C_AT_PCS'] +
+                       bd_LTP['PV_PCS'] +
+                       bd_LTP['PV_PROX_PCS']),
                     0
                 ),
                 np.maximum(
-                    (bd_LTP_MES['LTP_CART_ARR_MES_ANT'] +
-                     bd_LTP_MES['LTP_CART_MES_ATUAL'] +
-                     bd_LTP_MES['LTP_SALDO_PREV_PCS'] +
-                     bd_LTP_MES['LTP_EST_SEG_PCS'])
-                    - bd_LTP_MES['ET_PCS']
-                    - (bd_LTP_MES['C_ARR_PCS'] +
-                       bd_LTP_MES['C_AT_PCS'] +
-                       bd_LTP_MES['PV_PCS'] +
-                       bd_LTP_MES['PV_PROX_PCS']),
+                    (bd_LTP['LTP_CART_ARR_MES_ANT'] +
+                     bd_LTP['LTP_CART_MES_ATUAL'] +
+                     bd_LTP['LTP_SALDO_PREV_PCS'] +
+                     bd_LTP['LTP_EST_SEG_PCS'])
+                    - bd_LTP['ET_PCS']
+                    - (bd_LTP['C_ARR_PCS'] +
+                       bd_LTP['C_AT_PCS'] +
+                       bd_LTP['PV_PCS'] +
+                       bd_LTP['PV_PROX_PCS']),
                     0
                 )
             )
         )
         
         DIF_LM_PCS = (
-            bd_LTP_MES['NEC_PCS']
-            - (bd_LTP_MES['C_ARR_PCS'] +
-               bd_LTP_MES['C_AT_PCS'] +
-               bd_LTP_MES['PV_PCS'] +
-               bd_LTP_MES['PV_PROX_PCS'] +
-               bd_LTP_MES['ES_PCS'])
+            bd_LTP['NEC_PCS']
+            - (bd_LTP['C_ARR_PCS'] +
+               bd_LTP['C_AT_PCS'] +
+               bd_LTP['PV_PCS'] +
+               bd_LTP['PV_PROX_PCS'] +
+               bd_LTP['ES_PCS'])
         )
         
-        bd_LTP_MES['DIF_LM_PCS'] = np.where(
-            bd_LTP_MES['NEC_PCS'] <= 0,
+        bd_LTP['DIF_LM_PCS'] = np.where(
+            bd_LTP['NEC_PCS'] <= 0,
             0,
             np.where(
-                DIF_LM_PCS > bd_LTP_MES['LOTE_MIN'],
-                bd_LTP_MES['LOTE_MIN'],
+                DIF_LM_PCS > bd_LTP['LOTE_MIN'],
+                bd_LTP['LOTE_MIN'],
                 DIF_LM_PCS
             )
         )
         
         DIF_EMB_PCS = (
-            bd_LTP_MES['NEC_PCS']
-            - (bd_LTP_MES['C_ARR_PCS'] +
-               bd_LTP_MES['C_AT_PCS'] +
-               bd_LTP_MES['PV_PCS'] +
-               bd_LTP_MES['PV_PROX_PCS'] +
-               bd_LTP_MES['ES_PCS'] +
-               bd_LTP_MES['DIF_LM_PCS'])
+            bd_LTP['NEC_PCS']
+            - (bd_LTP['C_ARR_PCS'] +
+               bd_LTP['C_AT_PCS'] +
+               bd_LTP['PV_PCS'] +
+               bd_LTP['PV_PROX_PCS'] +
+               bd_LTP['ES_PCS'] +
+               bd_LTP['DIF_LM_PCS'])
         )
         
-        bd_LTP_MES['DIF_EMB_PCS'] = np.where(
-            bd_LTP_MES['NEC_PCS'] <= 0,
+        bd_LTP['DIF_EMB_PCS'] = np.where(
+            bd_LTP['NEC_PCS'] <= 0,
             0,
             DIF_EMB_PCS
         )
         
         # Transformar em HR as colunas calculadas em PCS para cortes
-        bd_LTP_MES['C_ARR_HR'] = bd_LTP_MES['C_ARR_PCS'] / bd_LTP_MES['PCS_HORA']
-        bd_LTP_MES['C_AT_HR'] = bd_LTP_MES['C_AT_PCS'] / bd_LTP_MES['PCS_HORA']
-        bd_LTP_MES['PV_HR'] = bd_LTP_MES['PV_PCS'] / bd_LTP_MES['PCS_HORA']
-        bd_LTP_MES['PV_PROX_HR'] = bd_LTP_MES['PV_PROX_PCS'] / bd_LTP_MES['PCS_HORA']
-        bd_LTP_MES['ES_HR'] = bd_LTP_MES['ES_PCS'] / bd_LTP_MES['PCS_HORA']
-        bd_LTP_MES['DIF_LM_HR'] = bd_LTP_MES['DIF_LM_PCS'] / bd_LTP_MES['PCS_HORA']
-        bd_LTP_MES['DIF_EMB_HR'] = bd_LTP_MES['DIF_EMB_PCS'] / bd_LTP_MES['PCS_HORA']
+        bd_LTP['C_ARR_HR'] = bd_LTP['C_ARR_PCS'] / bd_LTP['PCS_HORA']
+        bd_LTP['C_AT_HR'] = bd_LTP['C_AT_PCS'] / bd_LTP['PCS_HORA']
+        bd_LTP['PV_HR'] = bd_LTP['PV_PCS'] / bd_LTP['PCS_HORA']
+        bd_LTP['PV_PROX_HR'] = bd_LTP['PV_PROX_PCS'] / bd_LTP['PCS_HORA']
+        bd_LTP['ES_HR'] = bd_LTP['ES_PCS'] / bd_LTP['PCS_HORA']
+        bd_LTP['DIF_LM_HR'] = bd_LTP['DIF_LM_PCS'] / bd_LTP['PCS_HORA']
+        bd_LTP['DIF_EMB_HR'] = bd_LTP['DIF_EMB_PCS'] / bd_LTP['PCS_HORA']
 
-        return bd_LTP_MES
+        return bd_LTP
