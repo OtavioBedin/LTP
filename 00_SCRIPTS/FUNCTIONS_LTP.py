@@ -214,20 +214,20 @@ def calcular_demais_campos(df):
     df.loc[mask, 'NEC_ESTOURO_PCS'] = df.loc[mask, 'ID_PROD_UNID_FAT'].map(nec_nao_atend_dict).fillna(0).astype(df['NEC_ESTOURO_PCS'].dtype)
     
     # ------------------------------------------------------------------------------------------------
-    # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
+    # # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
     
-    # 1. Classificar pela coluna IND
-    df = df.sort_values('IND').reset_index(drop=True)
+    # # 1. Classificar pela coluna IND
+    # df = df.sort_values('IND').reset_index(drop=True)
     
-    # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS
-    tab_NEC_ESTOURO_PCS_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS']].copy()
+    # # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS
+    # tab_NEC_ESTOURO_PCS_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS']].copy()
     
-    # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
-    tab_NEC_ESTOURO_PCS_auxiliar = tab_NEC_ESTOURO_PCS_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
+    # # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
+    # tab_NEC_ESTOURO_PCS_auxiliar = tab_NEC_ESTOURO_PCS_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
     
-    # 4. Retornar o valor de NEC_ESTOURO_PCS da tabela tab_NEC_ESTOURO_PCS_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
-    nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS'].to_dict()
-    df['NEC_ESTOURO_PCS'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS'].dtype)
+    # # 4. Retornar o valor de NEC_ESTOURO_PCS da tabela tab_NEC_ESTOURO_PCS_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
+    # nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS'].to_dict()
+    # df['NEC_ESTOURO_PCS'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS'].dtype)
     
     # ------------------------------------------------------------------------------------------------
     
@@ -264,20 +264,20 @@ def calcular_demais_campos(df):
     df.loc[mask, 'NEC_ESTOURO_PCS_REC'] = df.loc[mask, 'ID_PROD_UNID_FAT'].map(nec_estouro_rec_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_REC'].dtype)
     
     # ------------------------------------------------------------------------------------------------
-    # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
+    # # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
     
-    # 1. Classificar pela coluna IND
-    df = df.sort_values('IND').reset_index(drop=True)
+    # # 1. Classificar pela coluna IND
+    # df = df.sort_values('IND').reset_index(drop=True)
     
-    # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS_REC
-    tab_NEC_ESTOURO_PCS_REC_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS_REC']].copy()
+    # # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS_REC
+    # tab_NEC_ESTOURO_PCS_REC_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS_REC']].copy()
     
-    # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
-    tab_NEC_ESTOURO_PCS_REC_auxiliar = tab_NEC_ESTOURO_PCS_REC_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
+    # # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
+    # tab_NEC_ESTOURO_PCS_REC_auxiliar = tab_NEC_ESTOURO_PCS_REC_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
     
-    # 4. Retornar o valor de NEC_ESTOURO_PCS_REC da tabela tab_NEC_ESTOURO_PCS_REC_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
-    nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_REC_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS_REC'].to_dict()
-    df['NEC_ESTOURO_PCS_REC'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_REC'].dtype)
+    # # 4. Retornar o valor de NEC_ESTOURO_PCS_REC da tabela tab_NEC_ESTOURO_PCS_REC_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
+    # nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_REC_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS_REC'].to_dict()
+    # df['NEC_ESTOURO_PCS_REC'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_REC'].dtype)
     
     # ------------------------------------------------------------------------------------------------
     
@@ -290,20 +290,20 @@ def calcular_demais_campos(df):
     df.loc[mask, 'NEC_ESTOURO_PCS_FER'] = df.loc[mask, 'ID_PROD_UNID_FAT'].map(nec_estouro_fer_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_FER'].dtype)
     
         # ------------------------------------------------------------------------------------------------
-    # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
+    # # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
     
-    # 1. Classificar pela coluna IND
-    df = df.sort_values('IND').reset_index(drop=True)
+    # # 1. Classificar pela coluna IND
+    # df = df.sort_values('IND').reset_index(drop=True)
     
-    # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS_FER
-    tab_NEC_ESTOURO_PCS_FER_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS_FER']].copy()
+    # # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS_FER
+    # tab_NEC_ESTOURO_PCS_FER_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS_FER']].copy()
     
-    # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
-    tab_NEC_ESTOURO_PCS_FER_auxiliar = tab_NEC_ESTOURO_PCS_FER_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
+    # # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
+    # tab_NEC_ESTOURO_PCS_FER_auxiliar = tab_NEC_ESTOURO_PCS_FER_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
     
-    # 4. Retornar o valor de NEC_ESTOURO_PCS_FER da tabela tab_NEC_ESTOURO_PCS_FER_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
-    nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_FER_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS_FER'].to_dict()
-    df['NEC_ESTOURO_PCS_FER'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_FER'].dtype)
+    # # 4. Retornar o valor de NEC_ESTOURO_PCS_FER da tabela tab_NEC_ESTOURO_PCS_FER_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
+    # nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_FER_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS_FER'].to_dict()
+    # df['NEC_ESTOURO_PCS_FER'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_FER'].dtype)
     
     # ------------------------------------------------------------------------------------------------
     
