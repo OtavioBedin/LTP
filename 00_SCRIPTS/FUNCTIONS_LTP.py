@@ -200,18 +200,64 @@ def calcular_distrib_capacidade(df, lote_min_flag, multiplo_emb_flag):
 # --------------------------------- ### Calculando demais campos ### --------------------------------
 # Calcular os campos NEC_ESTOURO_PCS, NEC_ARRASTE_PCS, %_OCUP_REC, %_OCUP_FER
 def calcular_demais_campos(df):
+    
     df = df.copy()
     
-    # Criar tabela auxiliar chamada tab_NEC_N_ATEND_PCS, com as colunas ID_ULT_PRIORI, ID_PROD_UNID_FAT, NEC_NAO_ATEND_PCS, deixando somente as linhas onde NEC_NAO_ATEND_PCS > 0
-    tab_NEC_N_ATEND_PCS = df[['ID_ULT_PRIORI', 'ID_PROD_UNID_FAT', 'NEC_NAO_ATEND_PCS']].copy()
-    tab_NEC_N_ATEND_PCS = tab_NEC_N_ATEND_PCS[tab_NEC_N_ATEND_PCS['NEC_NAO_ATEND_PCS'] > 0]
-    tab_NEC_N_ATEND_PCS = tab_NEC_N_ATEND_PCS[tab_NEC_N_ATEND_PCS['ID_ULT_PRIORI'].notna()].reset_index(drop=True)
-    
-    # Criar a coluna NEC_ESTOURO_PCS no df, conforme regra: Se MAT_PAR_prioridade for 1 e ID_ULT_PRIORI não for vazio, buscar o valor de NEC_NAO_ATEND_PCS, da tabela tab_NEC_N_ATEND_PCS, pelo campo df ID_PROD_UNID_FAT = tab_NEC_N_ATEND_PCS ID_PROD_UNID_FAT, senão atribuir 0
-    nec_nao_atend_dict = tab_NEC_N_ATEND_PCS.set_index('ID_PROD_UNID_FAT')['NEC_NAO_ATEND_PCS'].to_dict()
-    mask = (df['PRIOR_MATPAR'] == 1) & (df['ID_ULT_PRIORI'].notna())
-    df['NEC_ESTOURO_PCS'] = 0  # inicializa com zero
-    df.loc[mask, 'NEC_ESTOURO_PCS'] = df.loc[mask, 'ID_PROD_UNID_FAT'].map(nec_nao_atend_dict).fillna(0).astype(df['NEC_ESTOURO_PCS'].dtype)
+    # ============================================================
+    # LÓGICA NEC_ESTOURO_PCS
+    # ------------------------------------------------------------
+    # Regra:
+    # 1) Identificar, para cada combinação COD_PROD + UNID_FAT,
+    #    o último valor de NEC_NAO_ATEND_PCS com base no maior IND.
+    # 2) Considerar apenas registros onde NEC_NAO_ATEND_PCS > 0.
+    # 3) Levar esse valor para NEC_ESTOURO_PCS apenas nas linhas
+    #    onde ID_ULT_PRIORI estiver preenchido.
+    # 4) Caso não exista valor encontrado, preencher com 0.
+    # ============================================================
+
+    # 1) Seleciona apenas as colunas necessárias
+    tab_nec = df[['COD_PROD', 'UNID_FAT', 'IND', 'NEC_NAO_ATEND_PCS']].copy()
+
+    # 2) Mantém somente registros com NEC_NAO_ATEND_PCS > 0
+    tab_nec = tab_nec[tab_nec['NEC_NAO_ATEND_PCS'] > 0]
+
+    # 3) Ordena por chave e IND para garantir que o último registro
+    #    de cada COD_PROD + UNID_FAT represente o maior IND
+    tab_nec = tab_nec.sort_values(
+        by=['COD_PROD', 'UNID_FAT', 'IND'],
+        ascending=[True, True, True]
+    )
+
+    # 4) Mantém apenas o último registro por COD_PROD + UNID_FAT
+    tab_nec = (
+        tab_nec
+        .drop_duplicates(subset=['COD_PROD', 'UNID_FAT'], keep='last')
+        [['COD_PROD', 'UNID_FAT', 'NEC_NAO_ATEND_PCS']]
+        .rename(columns={'NEC_NAO_ATEND_PCS': 'NEC_ESTOURO_PCS_AUX'})
+    )
+
+    # 5) Faz merge com o dataframe principal
+    df = df.merge(
+        tab_nec,
+        on=['COD_PROD', 'UNID_FAT'],
+        how='left'
+    )
+
+    # 6) Inicializa a coluna final já com dtype consistente
+    df['NEC_ESTOURO_PCS'] = 0
+
+    # 7) Cria máscara das linhas elegíveis
+    mask = df['ID_ULT_PRIORI'].notna()
+
+    # 8) Preenche apenas nas linhas elegíveis, forçando dtype compatível
+    df.loc[mask, 'NEC_ESTOURO_PCS'] = (
+        df.loc[mask, 'NEC_ESTOURO_PCS_AUX']
+        .fillna(0)
+        .astype(df['NEC_ESTOURO_PCS'].dtype)
+    )
+
+    # 9) Remove coluna auxiliar
+    df.drop(columns=['NEC_ESTOURO_PCS_AUX'], inplace=True)
     
     # ------------------------------------------------------------------------------------------------
     # # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
@@ -230,7 +276,6 @@ def calcular_demais_campos(df):
     # df['NEC_ESTOURO_PCS'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS'].dtype)
     
     # ------------------------------------------------------------------------------------------------
-    
     # Criar coluna NEC_ESTOURO_HR
     df['NEC_ESTOURO_HR'] = (df['NEC_ESTOURO_PCS'] / df['PCS_HORA']).replace([np.inf, -np.inf], 0).fillna(0)
     
@@ -252,16 +297,62 @@ def calcular_demais_campos(df):
     
     tab_NEC_N_ATEND_PCS_REC_FER = df[['ID_ULT_PRIORI', 'ID_PROD_UNID_FAT', 'NEC_N_ATEND_PCS_REC', 'NEC_N_ATEND_PCS_FER']].copy()
     
-    # Criar tabela auxiliar chamada tab_NEC_N_ATEND_PCS_REC_FER, com as colunas ID_ULT_PRIORI, ID_PROD_UNID_FAT, NEC_N_ATEND_PCS_REC, NEC_N_ATEND_PCS_FER, deixando somente as linhas onde ID_ULT_PRIORI não for vazio, e depois eliminar as duplicatas linhas que NEC_N_ATEND_PCS_REC e NEC_N_ATEND_PCS_FER forem zero
-    tab_NEC_N_ATEND_PCS_REC_FER = df[['ID_ULT_PRIORI', 'ID_PROD_UNID_FAT', 'NEC_N_ATEND_PCS_REC', 'NEC_N_ATEND_PCS_FER']].copy()
-    tab_NEC_N_ATEND_PCS_REC_FER = tab_NEC_N_ATEND_PCS_REC_FER[tab_NEC_N_ATEND_PCS_REC_FER['ID_ULT_PRIORI'].notna()].reset_index(drop=True)
-    tab_NEC_N_ATEND_PCS_REC_FER = tab_NEC_N_ATEND_PCS_REC_FER[(tab_NEC_N_ATEND_PCS_REC_FER['NEC_N_ATEND_PCS_REC'] > 0) | (tab_NEC_N_ATEND_PCS_REC_FER['NEC_N_ATEND_PCS_FER'] > 0)].reset_index(drop=True)
-    
-    # Criar coluna NEC_ESTOURO_PCS_REC no df, conforme regra: Se PRIOR_MATPAR for 1 e ID_ULT_PRIORI não for vazio, buscar o valor NEC_N_ATEND_PCS_REC, da tabela tab_NEC_N_ATEND_PCS_REC_FER, pelo campo df ID_PROD_UNID_FAT = tab_NEC_N_ATEND_PCS_REC_FER ID_ULT_PRIORI, senão atribuir 0
-    nec_estouro_rec_dict = tab_NEC_N_ATEND_PCS_REC_FER.set_index('ID_ULT_PRIORI')['NEC_N_ATEND_PCS_REC'].to_dict()
-    mask = (df['PRIOR_MATPAR'] == 1) & (df['ID_ULT_PRIORI'].notna())
+    # ============================================================
+    # LÓGICA NEC_ESTOURO_PCS_REC
+    # ------------------------------------------------------------
+    # Regra:
+    # 1) Identificar, para cada combinação COD_PROD + UNID_FAT,
+    #    o último valor de NEC_N_ATEND_PCS_REC com base no maior IND.
+    # 2) Considerar apenas registros onde exista algum valor > 0 em
+    #    NEC_N_ATEND_PCS_REC ou NEC_N_ATEND_PCS_FER, para reduzir massa.
+    # 3) Levar o valor encontrado para NEC_ESTOURO_PCS_REC apenas nas
+    #    linhas onde ID_ULT_PRIORI estiver preenchido.
+    # 4) Caso não exista valor encontrado, preencher com 0.
+    # ============================================================
+
+    # 1) Seleciona apenas as colunas necessárias
+    tab_nec_rec = df[['COD_PROD', 'UNID_FAT', 'IND', 'NEC_N_ATEND_PCS_REC']].copy()
+
+    # 2) Mantém somente registros com NEC_N_ATEND_PCS_REC > 0
+    tab_nec_rec = tab_nec_rec[tab_nec_rec['NEC_N_ATEND_PCS_REC'] > 0]
+
+    # 3) Ordena por chave e IND para garantir que o último registro
+    #    de cada COD_PROD + UNID_FAT represente o maior IND
+    tab_nec_rec = tab_nec_rec.sort_values(
+        by=['COD_PROD', 'UNID_FAT', 'IND'],
+        ascending=[True, True, True]
+    )
+
+    # 4) Mantém apenas o último registro por COD_PROD + UNID_FAT
+    tab_nec_rec = (
+        tab_nec_rec
+        .drop_duplicates(subset=['COD_PROD', 'UNID_FAT'], keep='last')
+        [['COD_PROD', 'UNID_FAT', 'NEC_N_ATEND_PCS_REC']]
+        .rename(columns={'NEC_N_ATEND_PCS_REC': 'NEC_ESTOURO_PCS_REC_AUX'})
+    )
+
+    # 5) Faz merge com o dataframe principal
+    df = df.merge(
+        tab_nec_rec,
+        on=['COD_PROD', 'UNID_FAT'],
+        how='left'
+    )
+
+    # 6) Inicializa a coluna final já com dtype consistente
     df['NEC_ESTOURO_PCS_REC'] = 0
-    df.loc[mask, 'NEC_ESTOURO_PCS_REC'] = df.loc[mask, 'ID_PROD_UNID_FAT'].map(nec_estouro_rec_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_REC'].dtype)
+
+    # 7) Cria máscara das linhas elegíveis
+    mask = df['ID_ULT_PRIORI'].notna()
+
+    # 8) Preenche apenas nas linhas elegíveis, forçando dtype compatível
+    df.loc[mask, 'NEC_ESTOURO_PCS_REC'] = (
+        df.loc[mask, 'NEC_ESTOURO_PCS_REC_AUX']
+        .fillna(0)
+        .astype(df['NEC_ESTOURO_PCS_REC'].dtype)
+    )
+
+    # 9) Remove coluna auxiliar
+    df.drop(columns=['NEC_ESTOURO_PCS_REC_AUX'], inplace=True)
     
     # ------------------------------------------------------------------------------------------------
     # # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
@@ -283,12 +374,62 @@ def calcular_demais_campos(df):
     
     df['NEC_ESTOURO_HR_REC'] = (df['NEC_ESTOURO_PCS_REC'] / df['PCS_HORA']).replace([np.inf, -np.inf], 0).fillna(0)
     
-    # Criar coluna NEC_ESTOURO_PCS_FER no df, conforme regra: Se PRIOR_MATPAR for 1 e ID_ULT_PRIORI não for vazio, buscar o valor NEC_N_ATEND_PCS_REC, da tabela tab_NEC_N_ATEND_PCS_REC_FER, pelo campo df ID_PROD_UNID_FAT = tab_NEC_N_ATEND_PCS_REC_FER ID_ULT_PRIORI, senão atribuir 0
-    nec_estouro_fer_dict = tab_NEC_N_ATEND_PCS_REC_FER.set_index('ID_ULT_PRIORI')['NEC_N_ATEND_PCS_FER'].to_dict()
-    mask = (df['PRIOR_MATPAR'] == 1) & (df['ID_ULT_PRIORI'].notna())
+    # ============================================================
+    # LÓGICA NEC_ESTOURO_PCS_FER
+    # ------------------------------------------------------------
+    # Regra:
+    # 1) Identificar, para cada combinação COD_PROD + UNID_FAT,
+    #    o último valor de NEC_N_ATEND_PCS_FER com base no maior IND.
+    # 2) Considerar apenas registros onde NEC_N_ATEND_PCS_FER > 0.
+    # 3) Levar esse valor para NEC_ESTOURO_PCS_FER apenas nas linhas
+    #    onde ID_ULT_PRIORI estiver preenchido.
+    # 4) Caso não exista valor encontrado, preencher com 0.
+    # ============================================================
+
+    # 1) Seleciona apenas as colunas necessárias
+    tab_nec_fer = df[['COD_PROD', 'UNID_FAT', 'IND', 'NEC_N_ATEND_PCS_FER']].copy()
+
+    # 2) Mantém somente registros com NEC_N_ATEND_PCS_FER > 0
+    tab_nec_fer = tab_nec_fer[tab_nec_fer['NEC_N_ATEND_PCS_FER'] > 0]
+
+    # 3) Ordena por chave e IND para garantir que o último registro
+    #    de cada COD_PROD + UNID_FAT represente o maior IND
+    tab_nec_fer = tab_nec_fer.sort_values(
+        by=['COD_PROD', 'UNID_FAT', 'IND'],
+        ascending=[True, True, True]
+    )
+
+    # 4) Mantém apenas o último registro por COD_PROD + UNID_FAT
+    tab_nec_fer = (
+        tab_nec_fer
+        .drop_duplicates(subset=['COD_PROD', 'UNID_FAT'], keep='last')
+        [['COD_PROD', 'UNID_FAT', 'NEC_N_ATEND_PCS_FER']]
+        .rename(columns={'NEC_N_ATEND_PCS_FER': 'NEC_ESTOURO_PCS_FER_AUX'})
+    )
+
+    # 5) Faz merge com o dataframe principal
+    df = df.merge(
+        tab_nec_fer,
+        on=['COD_PROD', 'UNID_FAT'],
+        how='left'
+    )
+
+    # 6) Inicializa a coluna final já com dtype consistente
     df['NEC_ESTOURO_PCS_FER'] = 0
-    df.loc[mask, 'NEC_ESTOURO_PCS_FER'] = df.loc[mask, 'ID_PROD_UNID_FAT'].map(nec_estouro_fer_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_FER'].dtype)
-    
+
+    # 7) Cria máscara das linhas elegíveis
+    mask = df['ID_ULT_PRIORI'].notna()
+
+    # 8) Preenche apenas nas linhas elegíveis, forçando dtype compatível
+    df.loc[mask, 'NEC_ESTOURO_PCS_FER'] = (
+        df.loc[mask, 'NEC_ESTOURO_PCS_FER_AUX']
+        .fillna(0)
+        .astype(df['NEC_ESTOURO_PCS_FER'].dtype)
+    )
+
+    # 9) Remove coluna auxiliar
+    df.drop(columns=['NEC_ESTOURO_PCS_FER_AUX'], inplace=True)
+
         # ------------------------------------------------------------------------------------------------
     # # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
     
@@ -330,7 +471,7 @@ def calcular_demais_campos(df):
     # Criar coluna HR_OCUP_REC
     df['HR_OCUP_REC'] = df['HOR_REC'] * df['%_OCUP_REC']
     
-    return df, tab_NEC_N_ATEND_PCS, tab_NEC_ESTOURO_PCS, tab_NEC_N_ATEND_PCS_REC_FER
+    return df
 
 # --------------------- ### Explodir Estruturas de Produção ### ---------------------
 def explodir_estrutura_ltp(bd_estrut, bd_ltp):
