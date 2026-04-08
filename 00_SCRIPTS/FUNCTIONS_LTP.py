@@ -218,8 +218,8 @@ def calcular_demais_campos(df):
     # 1) Seleciona apenas as colunas necessárias
     tab_nec = df[['COD_PROD', 'UNID_FAT', 'IND', 'NEC_NAO_ATEND_PCS']].copy()
 
-    # 2) Mantém somente registros com NEC_NAO_ATEND_PCS > 0
-    tab_nec = tab_nec[tab_nec['NEC_NAO_ATEND_PCS'] > 0]
+    # # 2) Mantém somente registros com NEC_NAO_ATEND_PCS > 0
+    # tab_nec = tab_nec[tab_nec['NEC_NAO_ATEND_PCS'] > 0]
 
     # 3) Ordena por chave e IND para garantir que o último registro
     #    de cada COD_PROD + UNID_FAT represente o maior IND
@@ -313,8 +313,8 @@ def calcular_demais_campos(df):
     # 1) Seleciona apenas as colunas necessárias
     tab_nec_rec = df[['COD_PROD', 'UNID_FAT', 'IND', 'NEC_N_ATEND_PCS_REC']].copy()
 
-    # 2) Mantém somente registros com NEC_N_ATEND_PCS_REC > 0
-    tab_nec_rec = tab_nec_rec[tab_nec_rec['NEC_N_ATEND_PCS_REC'] > 0]
+    # # 2) Mantém somente registros com NEC_N_ATEND_PCS_REC > 0
+    # tab_nec_rec = tab_nec_rec[tab_nec_rec['NEC_N_ATEND_PCS_REC'] > 0]
 
     # 3) Ordena por chave e IND para garantir que o último registro
     #    de cada COD_PROD + UNID_FAT represente o maior IND
@@ -389,8 +389,8 @@ def calcular_demais_campos(df):
     # 1) Seleciona apenas as colunas necessárias
     tab_nec_fer = df[['COD_PROD', 'UNID_FAT', 'IND', 'NEC_N_ATEND_PCS_FER']].copy()
 
-    # 2) Mantém somente registros com NEC_N_ATEND_PCS_FER > 0
-    tab_nec_fer = tab_nec_fer[tab_nec_fer['NEC_N_ATEND_PCS_FER'] > 0]
+    # # 2) Mantém somente registros com NEC_N_ATEND_PCS_FER > 0
+    # tab_nec_fer = tab_nec_fer[tab_nec_fer['NEC_N_ATEND_PCS_FER'] > 0]
 
     # 3) Ordena por chave e IND para garantir que o último registro
     #    de cada COD_PROD + UNID_FAT represente o maior IND
