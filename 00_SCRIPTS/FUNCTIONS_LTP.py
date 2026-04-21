@@ -207,75 +207,59 @@ def calcular_demais_campos(df):
     # LÓGICA NEC_ESTOURO_PCS
     # ------------------------------------------------------------
     # Regra:
-    # 1) Identificar, para cada combinação COD_PROD + UNID_FAT,
-    #    o último valor de NEC_NAO_ATEND_PCS com base no maior IND.
-    # 2) Considerar apenas registros onde NEC_NAO_ATEND_PCS > 0.
-    # 3) Levar esse valor para NEC_ESTOURO_PCS apenas nas linhas
-    #    onde ID_ULT_PRIORI estiver preenchido.
-    # 4) Caso não exista valor encontrado, preencher com 0.
+    # 1) Para cada COD_PROD + UNID_FAT, pegar o último valor de
+    #    NEC_NAO_ATEND_PCS com base no maior IND.
+    # 2) Esse valor será rateado somente nas linhas onde
+    #    PRIOR_MATPAR = 1.
+    # 3) A base proporcional do rateio será a coluna PCS_HORA.
+    # 4) O resultado será gravado em NEC_ESTOURO_PCS.
+    # 5) Linhas não elegíveis recebem 0.
     # ============================================================
 
-    # 1) Seleciona apenas as colunas necessárias
-    tab_nec = df[['COD_PROD', 'UNID_FAT', 'IND', 'NEC_NAO_ATEND_PCS']].copy()
-
-    # # 2) Mantém somente registros com NEC_NAO_ATEND_PCS > 0
-    # tab_nec = tab_nec[tab_nec['NEC_NAO_ATEND_PCS'] > 0]
-
-    # 3) Ordena por chave e IND para garantir que o último registro
-    #    de cada COD_PROD + UNID_FAT represente o maior IND
-    tab_nec = tab_nec.sort_values(
-        by=['COD_PROD', 'UNID_FAT', 'IND'],
-        ascending=[True, True, True]
-    )
-
-    # 4) Mantém apenas o último registro por COD_PROD + UNID_FAT
+    # 1) Último NEC_NAO_ATEND_PCS por COD_PROD + UNID_FAT
     tab_nec = (
-        tab_nec
+        df[['COD_PROD', 'UNID_FAT', 'IND', 'NEC_NAO_ATEND_PCS']]
+        .sort_values(by=['COD_PROD', 'UNID_FAT', 'IND'])
         .drop_duplicates(subset=['COD_PROD', 'UNID_FAT'], keep='last')
         [['COD_PROD', 'UNID_FAT', 'NEC_NAO_ATEND_PCS']]
-        .rename(columns={'NEC_NAO_ATEND_PCS': 'NEC_ESTOURO_PCS_AUX'})
+        .rename(columns={'NEC_NAO_ATEND_PCS': 'NEC_ESTOURO_TOTAL'})
     )
 
-    # 5) Faz merge com o dataframe principal
+    # 2) Merge do total a ratear
     df = df.merge(
         tab_nec,
         on=['COD_PROD', 'UNID_FAT'],
         how='left'
     )
 
-    # 6) Inicializa a coluna final já com dtype consistente
-    df['NEC_ESTOURO_PCS'] = 0
+    # 3) Inicializa coluna final
+    df['NEC_ESTOURO_PCS'] = 0.0
 
-    # 7) Cria máscara das linhas elegíveis
-    mask = df['ID_ULT_PRIORI'].notna()
+    # 4) Máscara de linhas elegíveis para rateio
+    mask_rateio = df['PRIOR_MATPAR'].eq(1)
 
-    # 8) Preenche apenas nas linhas elegíveis, forçando dtype compatível
-    df.loc[mask, 'NEC_ESTOURO_PCS'] = (
-        df.loc[mask, 'NEC_ESTOURO_PCS_AUX']
-        .fillna(0)
-        .astype(df['NEC_ESTOURO_PCS'].dtype)
+    # 5) Soma de PCS_HORA por grupo somente nas linhas elegíveis
+    df.loc[mask_rateio, 'SOMA_PCS_HORA_RATEIO'] = (
+        df.loc[mask_rateio]
+        .groupby(['COD_PROD', 'UNID_FAT'])['PCS_HORA']
+        .transform('sum')
     )
 
-    # 9) Remove coluna auxiliar
-    df.drop(columns=['NEC_ESTOURO_PCS_AUX'], inplace=True)
+    # 6) Rateio proporcional
+    mask_calculo = (
+        mask_rateio
+        & df['NEC_ESTOURO_TOTAL'].fillna(0).gt(0)
+        & df['SOMA_PCS_HORA_RATEIO'].fillna(0).gt(0)
+    )
+
+    df.loc[mask_calculo, 'NEC_ESTOURO_PCS'] = (
+        df.loc[mask_calculo, 'PCS_HORA']
+        / df.loc[mask_calculo, 'SOMA_PCS_HORA_RATEIO']
+    ) * df.loc[mask_calculo, 'NEC_ESTOURO_TOTAL']
+
+    # 7) Limpeza de auxiliares
+    df.drop(columns=['NEC_ESTOURO_TOTAL', 'SOMA_PCS_HORA_RATEIO'], inplace=True, errors='ignore')
     
-    # ------------------------------------------------------------------------------------------------
-    # # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
-    
-    # # 1. Classificar pela coluna IND
-    # df = df.sort_values('IND').reset_index(drop=True)
-    
-    # # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS
-    # tab_NEC_ESTOURO_PCS_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS']].copy()
-    
-    # # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
-    # tab_NEC_ESTOURO_PCS_auxiliar = tab_NEC_ESTOURO_PCS_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
-    
-    # # 4. Retornar o valor de NEC_ESTOURO_PCS da tabela tab_NEC_ESTOURO_PCS_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
-    # nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS'].to_dict()
-    # df['NEC_ESTOURO_PCS'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS'].dtype)
-    
-    # ------------------------------------------------------------------------------------------------
     # Criar coluna NEC_ESTOURO_HR
     df['NEC_ESTOURO_HR'] = (df['NEC_ESTOURO_PCS'] / df['PCS_HORA']).replace([np.inf, -np.inf], 0).fillna(0)
     
@@ -303,74 +287,68 @@ def calcular_demais_campos(df):
     # Regra:
     # 1) Identificar, para cada combinação COD_PROD + UNID_FAT,
     #    o último valor de NEC_N_ATEND_PCS_REC com base no maior IND.
-    # 2) Considerar apenas registros onde exista algum valor > 0 em
-    #    NEC_N_ATEND_PCS_REC ou NEC_N_ATEND_PCS_FER, para reduzir massa.
-    # 3) Levar o valor encontrado para NEC_ESTOURO_PCS_REC apenas nas
-    #    linhas onde ID_ULT_PRIORI estiver preenchido.
-    # 4) Caso não exista valor encontrado, preencher com 0.
+    # 2) Ratear esse valor somente nas linhas onde PRIOR_MATPAR = 1.
+    # 3) A base do rateio será a coluna PCS_HORA.
+    # 4) Gravar o resultado em NEC_ESTOURO_PCS_REC.
+    # 5) Caso não exista valor encontrado, preencher com 0.
     # ============================================================
 
     # 1) Seleciona apenas as colunas necessárias
     tab_nec_rec = df[['COD_PROD', 'UNID_FAT', 'IND', 'NEC_N_ATEND_PCS_REC']].copy()
 
-    # # 2) Mantém somente registros com NEC_N_ATEND_PCS_REC > 0
-    # tab_nec_rec = tab_nec_rec[tab_nec_rec['NEC_N_ATEND_PCS_REC'] > 0]
-
-    # 3) Ordena por chave e IND para garantir que o último registro
+    # 2) Ordena por chave e IND para garantir que o último registro
     #    de cada COD_PROD + UNID_FAT represente o maior IND
     tab_nec_rec = tab_nec_rec.sort_values(
         by=['COD_PROD', 'UNID_FAT', 'IND'],
         ascending=[True, True, True]
     )
 
-    # 4) Mantém apenas o último registro por COD_PROD + UNID_FAT
+    # 3) Mantém apenas o último registro por COD_PROD + UNID_FAT
     tab_nec_rec = (
         tab_nec_rec
         .drop_duplicates(subset=['COD_PROD', 'UNID_FAT'], keep='last')
         [['COD_PROD', 'UNID_FAT', 'NEC_N_ATEND_PCS_REC']]
-        .rename(columns={'NEC_N_ATEND_PCS_REC': 'NEC_ESTOURO_PCS_REC_AUX'})
+        .rename(columns={'NEC_N_ATEND_PCS_REC': 'NEC_ESTOURO_PCS_REC_TOTAL'})
     )
 
-    # 5) Faz merge com o dataframe principal
+    # 4) Faz merge com o dataframe principal
     df = df.merge(
         tab_nec_rec,
         on=['COD_PROD', 'UNID_FAT'],
         how='left'
     )
 
-    # 6) Inicializa a coluna final já com dtype consistente
-    df['NEC_ESTOURO_PCS_REC'] = 0
+    # 5) Inicializa a coluna final
+    df['NEC_ESTOURO_PCS_REC'] = 0.0
 
-    # 7) Cria máscara das linhas elegíveis
-    mask = df['ID_ULT_PRIORI'].notna()
+    # 6) Cria máscara das linhas elegíveis para rateio
+    mask_rateio = df['PRIOR_MATPAR'].eq(1)
 
-    # 8) Preenche apenas nas linhas elegíveis, forçando dtype compatível
-    df.loc[mask, 'NEC_ESTOURO_PCS_REC'] = (
-        df.loc[mask, 'NEC_ESTOURO_PCS_REC_AUX']
-        .fillna(0)
-        .astype(df['NEC_ESTOURO_PCS_REC'].dtype)
+    # 7) Calcula a soma de PCS_HORA por grupo somente para linhas elegíveis
+    df.loc[mask_rateio, 'SOMA_PCS_HORA_REC'] = (
+        df.loc[mask_rateio]
+        .groupby(['COD_PROD', 'UNID_FAT'])['PCS_HORA']
+        .transform('sum')
     )
 
-    # 9) Remove coluna auxiliar
-    df.drop(columns=['NEC_ESTOURO_PCS_REC_AUX'], inplace=True)
-    
-    # ------------------------------------------------------------------------------------------------
-    # # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
-    
-    # # 1. Classificar pela coluna IND
-    # df = df.sort_values('IND').reset_index(drop=True)
-    
-    # # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS_REC
-    # tab_NEC_ESTOURO_PCS_REC_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS_REC']].copy()
-    
-    # # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
-    # tab_NEC_ESTOURO_PCS_REC_auxiliar = tab_NEC_ESTOURO_PCS_REC_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
-    
-    # # 4. Retornar o valor de NEC_ESTOURO_PCS_REC da tabela tab_NEC_ESTOURO_PCS_REC_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
-    # nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_REC_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS_REC'].to_dict()
-    # df['NEC_ESTOURO_PCS_REC'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_REC'].dtype)
-    
-    # ------------------------------------------------------------------------------------------------
+    # 8) Calcula o rateio proporcional
+    mask_calculo = (
+        mask_rateio
+        & df['NEC_ESTOURO_PCS_REC_TOTAL'].fillna(0).gt(0)
+        & df['SOMA_PCS_HORA_REC'].fillna(0).gt(0)
+    )
+
+    df.loc[mask_calculo, 'NEC_ESTOURO_PCS_REC'] = (
+        df.loc[mask_calculo, 'PCS_HORA']
+        / df.loc[mask_calculo, 'SOMA_PCS_HORA_REC']
+    ) * df.loc[mask_calculo, 'NEC_ESTOURO_PCS_REC_TOTAL']
+
+    # 9) Remove colunas auxiliares
+    df.drop(
+        columns=['NEC_ESTOURO_PCS_REC_TOTAL', 'SOMA_PCS_HORA_REC'],
+        inplace=True,
+        errors='ignore'
+    )
     
     df['NEC_ESTOURO_HR_REC'] = (df['NEC_ESTOURO_PCS_REC'] / df['PCS_HORA']).replace([np.inf, -np.inf], 0).fillna(0)
     
@@ -380,73 +358,69 @@ def calcular_demais_campos(df):
     # Regra:
     # 1) Identificar, para cada combinação COD_PROD + UNID_FAT,
     #    o último valor de NEC_N_ATEND_PCS_FER com base no maior IND.
-    # 2) Considerar apenas registros onde NEC_N_ATEND_PCS_FER > 0.
-    # 3) Levar esse valor para NEC_ESTOURO_PCS_FER apenas nas linhas
-    #    onde ID_ULT_PRIORI estiver preenchido.
-    # 4) Caso não exista valor encontrado, preencher com 0.
+    # 2) Ratear esse valor somente nas linhas onde PRIOR_MATPAR = 1.
+    # 3) A base do rateio será a coluna PCS_HORA.
+    # 4) Gravar o resultado em NEC_ESTOURO_PCS_FER.
+    # 5) Caso não exista valor encontrado, preencher com 0.
     # ============================================================
 
     # 1) Seleciona apenas as colunas necessárias
     tab_nec_fer = df[['COD_PROD', 'UNID_FAT', 'IND', 'NEC_N_ATEND_PCS_FER']].copy()
 
-    # # 2) Mantém somente registros com NEC_N_ATEND_PCS_FER > 0
-    # tab_nec_fer = tab_nec_fer[tab_nec_fer['NEC_N_ATEND_PCS_FER'] > 0]
-
-    # 3) Ordena por chave e IND para garantir que o último registro
+    # 2) Ordena por chave e IND para garantir que o último registro
     #    de cada COD_PROD + UNID_FAT represente o maior IND
     tab_nec_fer = tab_nec_fer.sort_values(
         by=['COD_PROD', 'UNID_FAT', 'IND'],
         ascending=[True, True, True]
     )
 
-    # 4) Mantém apenas o último registro por COD_PROD + UNID_FAT
+    # 3) Mantém apenas o último registro por COD_PROD + UNID_FAT
     tab_nec_fer = (
         tab_nec_fer
         .drop_duplicates(subset=['COD_PROD', 'UNID_FAT'], keep='last')
         [['COD_PROD', 'UNID_FAT', 'NEC_N_ATEND_PCS_FER']]
-        .rename(columns={'NEC_N_ATEND_PCS_FER': 'NEC_ESTOURO_PCS_FER_AUX'})
+        .rename(columns={'NEC_N_ATEND_PCS_FER': 'NEC_ESTOURO_PCS_FER_TOTAL'})
     )
 
-    # 5) Faz merge com o dataframe principal
+    # 4) Faz merge com o dataframe principal
     df = df.merge(
         tab_nec_fer,
         on=['COD_PROD', 'UNID_FAT'],
         how='left'
     )
 
-    # 6) Inicializa a coluna final já com dtype consistente
-    df['NEC_ESTOURO_PCS_FER'] = 0
+    # 5) Inicializa a coluna final
+    df['NEC_ESTOURO_PCS_FER'] = 0.0
 
-    # 7) Cria máscara das linhas elegíveis
-    mask = df['ID_ULT_PRIORI'].notna()
+    # 6) Cria máscara das linhas elegíveis para rateio
+    mask_rateio = df['PRIOR_MATPAR'].eq(1)
 
-    # 8) Preenche apenas nas linhas elegíveis, forçando dtype compatível
-    df.loc[mask, 'NEC_ESTOURO_PCS_FER'] = (
-        df.loc[mask, 'NEC_ESTOURO_PCS_FER_AUX']
-        .fillna(0)
-        .astype(df['NEC_ESTOURO_PCS_FER'].dtype)
+    # 7) Calcula a soma de PCS_HORA por grupo somente para linhas elegíveis
+    df.loc[mask_rateio, 'SOMA_PCS_HORA_FER'] = (
+        df.loc[mask_rateio]
+        .groupby(['COD_PROD', 'UNID_FAT'])['PCS_HORA']
+        .transform('sum')
     )
 
-    # 9) Remove coluna auxiliar
-    df.drop(columns=['NEC_ESTOURO_PCS_FER_AUX'], inplace=True)
+    # 8) Calcula o rateio proporcional
+    mask_calculo = (
+        mask_rateio
+        & df['NEC_ESTOURO_PCS_FER_TOTAL'].fillna(0).gt(0)
+        & df['SOMA_PCS_HORA_FER'].fillna(0).gt(0)
+    )
 
-        # ------------------------------------------------------------------------------------------------
-    # # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
-    
-    # # 1. Classificar pela coluna IND
-    # df = df.sort_values('IND').reset_index(drop=True)
-    
-    # # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS_FER
-    # tab_NEC_ESTOURO_PCS_FER_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS_FER']].copy()
-    
-    # # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
-    # tab_NEC_ESTOURO_PCS_FER_auxiliar = tab_NEC_ESTOURO_PCS_FER_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
-    
-    # # 4. Retornar o valor de NEC_ESTOURO_PCS_FER da tabela tab_NEC_ESTOURO_PCS_FER_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
-    # nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_FER_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS_FER'].to_dict()
-    # df['NEC_ESTOURO_PCS_FER'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_FER'].dtype)
-    
-    # ------------------------------------------------------------------------------------------------
+    df.loc[mask_calculo, 'NEC_ESTOURO_PCS_FER'] = (
+        df.loc[mask_calculo, 'PCS_HORA']
+        / df.loc[mask_calculo, 'SOMA_PCS_HORA_FER']
+    ) * df.loc[mask_calculo, 'NEC_ESTOURO_PCS_FER_TOTAL']
+
+    # 9) Remove colunas auxiliares
+    df.drop(
+        columns=['NEC_ESTOURO_PCS_FER_TOTAL', 'SOMA_PCS_HORA_FER'],
+        inplace=True,
+        errors='ignore'
+    )
+    # ---------------------------------------------------------------------------
     
     df['NEC_ESTOURO_HR_FER'] = (df['NEC_ESTOURO_PCS_FER'] / df['PCS_HORA']).replace([np.inf, -np.inf], 0).fillna(0)
 
