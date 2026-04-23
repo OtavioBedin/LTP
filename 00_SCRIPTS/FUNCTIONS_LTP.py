@@ -278,9 +278,7 @@ def calcular_demais_campos(df):
     
     # Criar coluna NEC_N_ATEND_PCS_FER, retornar o máximo de 0 e NEC_PCS - FER_CAP_VAR_HR
     df['NEC_N_ATEND_PCS_FER'] = np.maximum(0, df['NEC_PCS'] - (df['FER_CAP_VAR_HR'] * df['PCS_HORA']))
-    
-    tab_NEC_N_ATEND_PCS_REC_FER = df[['ID_ULT_PRIORI', 'ID_PROD_UNID_FAT', 'NEC_N_ATEND_PCS_REC', 'NEC_N_ATEND_PCS_FER']].copy()
-    
+        
     # ============================================================
     # LÓGICA NEC_ESTOURO_PCS_REC
     # ------------------------------------------------------------
