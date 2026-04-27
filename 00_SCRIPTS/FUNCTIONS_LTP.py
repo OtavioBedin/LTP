@@ -200,571 +200,136 @@ def calcular_distrib_capacidade(df, lote_min_flag, multiplo_emb_flag):
 # --------------------------------- ### Calculando demais campos ### --------------------------------
 # Calcular os campos NEC_ESTOURO_PCS, NEC_ARRASTE_PCS, %_OCUP_REC, %_OCUP_FER
 def calcular_demais_campos(df):
-    
     df = df.copy()
     
-    # ============================================================
-    # LÓGICA NEC_ESTOURO_PCS
-    # ------------------------------------------------------------
-    # Regra:
-    # 1) Para cada COD_PROD + UNID_FAT, pegar o último valor de
-    #    NEC_NAO_ATEND_PCS com base no maior IND.
-    # 2) Esse valor será rateado com base em um novo percentual
-    #    calculado pela média de:
-    #       a) Percentual da linha em TOTAL_NECS_HR
-    #       b) Percentual da linha em PCS_HORA
-    # 3) TOTAL_NECS_HR = NEC_ATEND_HR + NEC_NAO_ATEND_HR
-    # 4) O grupo-base do denominador será sempre:
-    #       UNID_FAT + COD_PROD + "1"
-    # 5) Percentual final:
-    #       (PERC_TOTAL_NECS_HR + PERC_PCS_HORA) / 2
-    # 6) Aplicar sobre NEC_ESTOURO_TOTAL
-    # 7) Caso não exista base válida, resultado = 0
-    # ============================================================
-
-    # 1) Último NEC_NAO_ATEND_PCS por COD_PROD + UNID_FAT
-    tab_nec = (
-        df[['COD_PROD', 'UNID_FAT', 'IND', 'NEC_NAO_ATEND_PCS']]
-        .sort_values(['COD_PROD', 'UNID_FAT', 'IND'])
-        .drop_duplicates(['COD_PROD', 'UNID_FAT'], keep='last')
-        .set_index(['COD_PROD', 'UNID_FAT'])['NEC_NAO_ATEND_PCS']
-    )
-
-    # 2) Mapear total a ratear (sem merge)
-    df['NEC_ESTOURO_TOTAL'] = list(zip(df['COD_PROD'], df['UNID_FAT']))
-    df['NEC_ESTOURO_TOTAL'] = df['NEC_ESTOURO_TOTAL'].map(tab_nec).fillna(0)
-
-    # ============================================================
-    # BASE DE CÁLCULO DO PERCENTUAL
-    # ============================================================
-
-    # 3) Criar chave de distribuição
-    df['ID_DIST_ESTOURO'] = (
-        df['UNID_FAT'].astype(str) + '|' +
-        df['COD_PROD'].astype(str) + '|' +
-        df['PRIOR_MATPAR'].astype(str)
-    )
-
-    # 4) Criar chave base fixa (PRIOR_MATPAR = 1)
-    df['ID_DIST_ESTOURO_BASE_1'] = (
-        df['UNID_FAT'].astype(str) + '|' +
-        df['COD_PROD'].astype(str) + '|1'
-    )
-
-    # 5) TOTAL_NECS_HR
-    df['TOTAL_NECS_HR'] = (
-        df['NEC_ATEND_HR'].fillna(0)
-        + df['NEC_NAO_ATEND_HR'].fillna(0)
-    )
-
-    # 6) Criar dicionários de soma (performático)
-    soma_total_necs_hr_dict = (
-        df.groupby('ID_DIST_ESTOURO', sort=False)['TOTAL_NECS_HR']
-        .sum()
-        .to_dict()
-    )
-
-    soma_pcs_hora_dict = (
-        df.groupby('ID_DIST_ESTOURO', sort=False)['PCS_HORA']
-        .sum()
-        .to_dict()
-    )
-
-    # 7) Buscar somas do grupo base
-    df['SOMA_TOTAL_NECS_HR_BASE_1'] = (
-        df['ID_DIST_ESTOURO_BASE_1'].map(soma_total_necs_hr_dict).fillna(0)
-    )
-
-    df['SOMA_PCS_HORA_BASE_1'] = (
-        df['ID_DIST_ESTOURO_BASE_1'].map(soma_pcs_hora_dict).fillna(0)
-    )
-
-    # ============================================================
-    # CÁLCULO DOS PERCENTUAIS
-    # ============================================================
-
-    # 8) Inicializar percentuais
-    df['PERC_TOTAL_NECS_HR'] = 0.0
-    df['PERC_PCS_HORA'] = 0.0
-
-    # 9) Percentual TOTAL_NECS_HR
-    mask_necs = df['SOMA_TOTAL_NECS_HR_BASE_1'].gt(0)
-
-    df.loc[mask_necs, 'PERC_TOTAL_NECS_HR'] = (
-        df.loc[mask_necs, 'TOTAL_NECS_HR']
-        / df.loc[mask_necs, 'SOMA_TOTAL_NECS_HR_BASE_1']
-    )
-
-    # 10) Percentual PCS_HORA
-    mask_pcs = df['SOMA_PCS_HORA_BASE_1'].gt(0)
-
-    df.loc[mask_pcs, 'PERC_PCS_HORA'] = (
-        df.loc[mask_pcs, 'PCS_HORA']
-        / df.loc[mask_pcs, 'SOMA_PCS_HORA_BASE_1']
-    )
-
-    # 11) Percentual final
-    df['PERC_RATEIO_ESTOURO'] = (
-        df['PERC_TOTAL_NECS_HR']
-        + df['PERC_PCS_HORA']
-    ) / 2
-
-    # ============================================================
-    # APLICAÇÃO DO RATEIO
-    # ============================================================
-
-    # 12) Inicializar resultado
-    df['NEC_ESTOURO_PCS'] = 0.0
-
-    # 13) Aplicar rateio
-    mask_calc = (
-        df['NEC_ESTOURO_TOTAL'].gt(0)
-        & df['PERC_RATEIO_ESTOURO'].gt(0)
-    )
-
-    df.loc[mask_calc, 'NEC_ESTOURO_PCS'] = (
-        df.loc[mask_calc, 'PERC_RATEIO_ESTOURO']
-        * df.loc[mask_calc, 'NEC_ESTOURO_TOTAL']
-    )
-
-    # ============================================================
-    # LIMPEZA
-    # ============================================================
-
-    df.drop(
-        columns=[
-            'NEC_ESTOURO_TOTAL',
-            'TOTAL_NECS_HR',
-            'SOMA_TOTAL_NECS_HR_BASE_1',
-            'SOMA_PCS_HORA_BASE_1',
-            'PERC_TOTAL_NECS_HR',
-            'PERC_PCS_HORA',
-            'PERC_RATEIO_ESTOURO',
-            'ID_DIST_ESTOURO_BASE_1'
-        ],
-        inplace=True,
-        errors='ignore'
-    )
-
-    # ============================================================
-    # CONVERSÃO PARA HORA
-    # ============================================================
-
-    df['NEC_ESTOURO_HR'] = np.divide(
-        df['NEC_ESTOURO_PCS'],
-        df['PCS_HORA'],
-        out=np.zeros(len(df), dtype=float),
-        where=df['PCS_HORA'].to_numpy() != 0
-    )
-
-    # ============================================================
-    # LÓGICA ARRASTE (mantida igual)
-    # ============================================================
-
-    tab_NEC_ESTOURO_PCS = df[
-        ['ID_PROD_UNID_FAT', 'ID_PROD_UNID_FAT_ANT', 'EST_SEG_PCS', 'NEC_ESTOURO_PCS']
-    ].copy()
-
-    tab_NEC_ESTOURO_PCS['NEC_ARRASTE_PCS'] = (
-        tab_NEC_ESTOURO_PCS['NEC_ESTOURO_PCS']
-        - tab_NEC_ESTOURO_PCS['EST_SEG_PCS']
-    ).clip(lower=0)
-
-    nec_arraste_dict = (
-        tab_NEC_ESTOURO_PCS
-        .set_index('ID_PROD_UNID_FAT')['NEC_ARRASTE_PCS']
-        .to_dict()
-    )
-
+    # Criar tabela auxiliar chamada tab_NEC_N_ATEND_PCS, com as colunas ID_ULT_PRIORI, ID_PROD_UNID_FAT, NEC_NAO_ATEND_PCS, deixando somente as linhas onde NEC_NAO_ATEND_PCS > 0
+    tab_NEC_N_ATEND_PCS = df[['ID_ULT_PRIORI', 'ID_PROD_UNID_FAT', 'NEC_NAO_ATEND_PCS']].copy()
+    tab_NEC_N_ATEND_PCS = tab_NEC_N_ATEND_PCS[tab_NEC_N_ATEND_PCS['NEC_NAO_ATEND_PCS'] > 0]
+    tab_NEC_N_ATEND_PCS = tab_NEC_N_ATEND_PCS[tab_NEC_N_ATEND_PCS['ID_ULT_PRIORI'].notna()].reset_index(drop=True)
+    
+    # Criar a coluna NEC_ESTOURO_PCS no df, conforme regra: Se MAT_PAR_prioridade for 1 e ID_ULT_PRIORI não for vazio, buscar o valor de NEC_NAO_ATEND_PCS, da tabela tab_NEC_N_ATEND_PCS, pelo campo df ID_PROD_UNID_FAT = tab_NEC_N_ATEND_PCS ID_PROD_UNID_FAT, senão atribuir 0
+    nec_nao_atend_dict = tab_NEC_N_ATEND_PCS.set_index('ID_PROD_UNID_FAT')['NEC_NAO_ATEND_PCS'].to_dict()
+    mask = (df['PRIOR_MATPAR'] == 1) & (df['ID_ULT_PRIORI'].notna())
+    df['NEC_ESTOURO_PCS'] = 0  # inicializa com zero
+    df.loc[mask, 'NEC_ESTOURO_PCS'] = df.loc[mask, 'ID_PROD_UNID_FAT'].map(nec_nao_atend_dict).fillna(0).astype(df['NEC_ESTOURO_PCS'].dtype)
+    
+    # ------------------------------------------------------------------------------------------------
+    # # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
+    
+    # # 1. Classificar pela coluna IND
+    # df = df.sort_values('IND').reset_index(drop=True)
+    
+    # # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS
+    # tab_NEC_ESTOURO_PCS_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS']].copy()
+    
+    # # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
+    # tab_NEC_ESTOURO_PCS_auxiliar = tab_NEC_ESTOURO_PCS_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
+    
+    # # 4. Retornar o valor de NEC_ESTOURO_PCS da tabela tab_NEC_ESTOURO_PCS_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
+    # nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS'].to_dict()
+    # df['NEC_ESTOURO_PCS'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS'].dtype)
+    
+    # ------------------------------------------------------------------------------------------------
+    
+    # Criar coluna NEC_ESTOURO_HR
+    df['NEC_ESTOURO_HR'] = (df['NEC_ESTOURO_PCS'] / df['PCS_HORA']).replace([np.inf, -np.inf], 0).fillna(0)
+    
+    # Criar tabela auxiliar chamada tab_NEC_ARRASTE_PCS onde a tabela vai ter as colunas ID_PROD_UNID_FAT, ID_PROD_UNID_FAT_ANT, EST_SEG_PCS, NEC_ESTOURO_PCS, criar campo NEC_ARRASTE_PCS calculando se NEC_ESTOURO_PCS - EST_SEG_PCS for menor ou igual a zero , atribuir 0, senão atribuir NEC_ESTOURO_PCS - EST_SEG_PCS
+    tab_NEC_ESTOURO_PCS = df[['ID_PROD_UNID_FAT', 'ID_PROD_UNID_FAT_ANT', 'EST_SEG_PCS', 'NEC_ESTOURO_PCS']].copy()
+    tab_NEC_ESTOURO_PCS['NEC_ARRASTE_PCS'] = (tab_NEC_ESTOURO_PCS['NEC_ESTOURO_PCS'] - tab_NEC_ESTOURO_PCS['EST_SEG_PCS']).clip(lower=0)
+    
+    # Criar a coluna NEC_ARRASTE_PCS no df, conforme regra: Se PRIOR_MATPAR for 1 e PRIOR_ROT for 1, buscar o valor de NEC_ARRASTE_PCS, da tabela tab_NEC_ARRASTE_PCS, pelo campo df ID_PROD_UNID_FAT_ANT no campo tab_NEC_ARRASTE_PCS ID_PROD_UNID_FAT, senão atribuir 0            
+    nec_arraste_dict = tab_NEC_ESTOURO_PCS.set_index('ID_PROD_UNID_FAT')['NEC_ARRASTE_PCS'].to_dict()
     mask = (df['PRIOR_MATPAR'] == 1) & (df['PRIOR_ROT'] == 1)
+    df['NEC_ARRASTE_PCS'] = 0
+    df.loc[mask, 'NEC_ARRASTE_PCS'] = df.loc[mask, 'ID_PROD_UNID_FAT_ANT'].map(nec_arraste_dict).fillna(0).astype(df['NEC_ARRASTE_PCS'].dtype)
+    
+    # Criar coluna NEC_N_ATEND_PCS_REC, retornar o máximo de 0 e NEC_PCS - REC_CAP_VAR_HR
+    df['NEC_N_ATEND_PCS_REC'] = np.maximum(0, df['NEC_PCS'] - (df['REC_CAP_VAR_HR'] * df['PCS_HORA']))
+    
+    # Criar coluna NEC_N_ATEND_PCS_FER, retornar o máximo de 0 e NEC_PCS - FER_CAP_VAR_HR
+    df['NEC_N_ATEND_PCS_FER'] = np.maximum(0, df['NEC_PCS'] - (df['FER_CAP_VAR_HR'] * df['PCS_HORA']))
+    
+    tab_NEC_N_ATEND_PCS_REC_FER = df[['ID_ULT_PRIORI', 'ID_PROD_UNID_FAT', 'NEC_N_ATEND_PCS_REC', 'NEC_N_ATEND_PCS_FER']].copy()
+    
+    # Criar tabela auxiliar chamada tab_NEC_N_ATEND_PCS_REC_FER, com as colunas ID_ULT_PRIORI, ID_PROD_UNID_FAT, NEC_N_ATEND_PCS_REC, NEC_N_ATEND_PCS_FER, deixando somente as linhas onde ID_ULT_PRIORI não for vazio, e depois eliminar as duplicatas linhas que NEC_N_ATEND_PCS_REC e NEC_N_ATEND_PCS_FER forem zero
+    tab_NEC_N_ATEND_PCS_REC_FER = df[['ID_ULT_PRIORI', 'ID_PROD_UNID_FAT', 'NEC_N_ATEND_PCS_REC', 'NEC_N_ATEND_PCS_FER']].copy()
+    tab_NEC_N_ATEND_PCS_REC_FER = tab_NEC_N_ATEND_PCS_REC_FER[tab_NEC_N_ATEND_PCS_REC_FER['ID_ULT_PRIORI'].notna()].reset_index(drop=True)
+    tab_NEC_N_ATEND_PCS_REC_FER = tab_NEC_N_ATEND_PCS_REC_FER[(tab_NEC_N_ATEND_PCS_REC_FER['NEC_N_ATEND_PCS_REC'] > 0) | (tab_NEC_N_ATEND_PCS_REC_FER['NEC_N_ATEND_PCS_FER'] > 0)].reset_index(drop=True)
+    
+    # Criar coluna NEC_ESTOURO_PCS_REC no df, conforme regra: Se PRIOR_MATPAR for 1 e ID_ULT_PRIORI não for vazio, buscar o valor NEC_N_ATEND_PCS_REC, da tabela tab_NEC_N_ATEND_PCS_REC_FER, pelo campo df ID_PROD_UNID_FAT = tab_NEC_N_ATEND_PCS_REC_FER ID_ULT_PRIORI, senão atribuir 0
+    nec_estouro_rec_dict = tab_NEC_N_ATEND_PCS_REC_FER.set_index('ID_ULT_PRIORI')['NEC_N_ATEND_PCS_REC'].to_dict()
+    mask = (df['PRIOR_MATPAR'] == 1) & (df['ID_ULT_PRIORI'].notna())
+    df['NEC_ESTOURO_PCS_REC'] = 0
+    df.loc[mask, 'NEC_ESTOURO_PCS_REC'] = df.loc[mask, 'ID_PROD_UNID_FAT'].map(nec_estouro_rec_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_REC'].dtype)
+    
+    # ------------------------------------------------------------------------------------------------
+    # # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
+    
+    # # 1. Classificar pela coluna IND
+    # df = df.sort_values('IND').reset_index(drop=True)
+    
+    # # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS_REC
+    # tab_NEC_ESTOURO_PCS_REC_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS_REC']].copy()
+    
+    # # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
+    # tab_NEC_ESTOURO_PCS_REC_auxiliar = tab_NEC_ESTOURO_PCS_REC_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
+    
+    # # 4. Retornar o valor de NEC_ESTOURO_PCS_REC da tabela tab_NEC_ESTOURO_PCS_REC_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
+    # nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_REC_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS_REC'].to_dict()
+    # df['NEC_ESTOURO_PCS_REC'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_REC'].dtype)
+    
+    # ------------------------------------------------------------------------------------------------
+    
+    df['NEC_ESTOURO_HR_REC'] = (df['NEC_ESTOURO_PCS_REC'] / df['PCS_HORA']).replace([np.inf, -np.inf], 0).fillna(0)
+    
+    # Criar coluna NEC_ESTOURO_PCS_FER no df, conforme regra: Se PRIOR_MATPAR for 1 e ID_ULT_PRIORI não for vazio, buscar o valor NEC_N_ATEND_PCS_REC, da tabela tab_NEC_N_ATEND_PCS_REC_FER, pelo campo df ID_PROD_UNID_FAT = tab_NEC_N_ATEND_PCS_REC_FER ID_ULT_PRIORI, senão atribuir 0
+    nec_estouro_fer_dict = tab_NEC_N_ATEND_PCS_REC_FER.set_index('ID_ULT_PRIORI')['NEC_N_ATEND_PCS_FER'].to_dict()
+    mask = (df['PRIOR_MATPAR'] == 1) & (df['ID_ULT_PRIORI'].notna())
+    df['NEC_ESTOURO_PCS_FER'] = 0
+    df.loc[mask, 'NEC_ESTOURO_PCS_FER'] = df.loc[mask, 'ID_PROD_UNID_FAT'].map(nec_estouro_fer_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_FER'].dtype)
+    
+        # ------------------------------------------------------------------------------------------------
+    # # FIXME: NOVO BLOCO CRIADO PARA CONTORNAR PROBLEMA DE CORTE DE MÁQUINAS, E ALOCAÇÃO DE DISPONIBILIDADE PARA PRÓXIMAS NECESSIDADES, GERANDO INCONSISTENCIAS NOS CORTES, REPLICANDO ESTOURO PARA LINHAS QUE TENHAM MESMO ID_PROD_UNID_FAT
+    
+    # # 1. Classificar pela coluna IND
+    # df = df.sort_values('IND').reset_index(drop=True)
+    
+    # # 2. Criando uma tabela com cópia, apenas com as colunas ID_PROD_UNID_FAT, NEC_ESTOURO_PCS_FER
+    # tab_NEC_ESTOURO_PCS_FER_auxiliar = df[['ID_PROD_UNID_FAT', 'NEC_ESTOURO_PCS_FER']].copy()
+    
+    # # 3. Remover Duplicatas mantendo sempre o ultimo registro (maior IND) para cada ID_PROD_UNID_FAT
+    # tab_NEC_ESTOURO_PCS_FER_auxiliar = tab_NEC_ESTOURO_PCS_FER_auxiliar.drop_duplicates(subset='ID_PROD_UNID_FAT', keep='last').reset_index(drop=True)
+    
+    # # 4. Retornar o valor de NEC_ESTOURO_PCS_FER da tabela tab_NEC_ESTOURO_PCS_FER_auxiliar para a tabela original df, buscando pelo campo ID_PROD_UNID_FAT, e atribuir o valor encontrado para as linhas que tiverem o mesmo ID_PROD_UNID_FAT
+    # nec_estouro_pcs_dict = tab_NEC_ESTOURO_PCS_FER_auxiliar.set_index('ID_PROD_UNID_FAT')['NEC_ESTOURO_PCS_FER'].to_dict()
+    # df['NEC_ESTOURO_PCS_FER'] = df['ID_PROD_UNID_FAT'].map(nec_estouro_pcs_dict).fillna(0).astype(df['NEC_ESTOURO_PCS_FER'].dtype)
+    
+    # ------------------------------------------------------------------------------------------------
+    
+    df['NEC_ESTOURO_HR_FER'] = (df['NEC_ESTOURO_PCS_FER'] / df['PCS_HORA']).replace([np.inf, -np.inf], 0).fillna(0)
 
-    df['NEC_ARRASTE_PCS'] = 0.0
-
-    df.loc[mask, 'NEC_ARRASTE_PCS'] = (
-        df.loc[mask, 'ID_PROD_UNID_FAT_ANT']
-        .map(nec_arraste_dict)
-        .fillna(0)
-    )
-
-    # ============================================================
-    # LÓGICAS FINAIS (mantidas)
-    # ============================================================
-
-    df['NEC_N_ATEND_PCS_REC'] = np.maximum(
+    # Criar coluna %_OCUP_REC, conforme regra: Se MIN(HOR_REC, HOR_CAP) for <= 0, atribuir 0, senão atribuir SUM(NEC_ESTOURO_PCS, NEC_ATEND_PCS) dividir por PCS_HORA, e depois dividir tudo isso por HOR_REC
+    ocup_rec = ((df['NEC_ESTOURO_PCS_REC'] + df['NEC_ATEND_PCS']) / df['PCS_HORA']) / df['HOR_REC']
+    df['%_OCUP_REC'] = np.where(
+        (df['HOR_REC'] == 0) | (df['PCS_HORA'] == 0),
         0,
-        df['NEC_PCS'] - (df['REC_CAP_VAR_HR'] * df['PCS_HORA'])
-    )
-
-    df['NEC_N_ATEND_PCS_FER'] = np.maximum(
-        0,
-        df['NEC_PCS'] - (df['FER_CAP_VAR_HR'] * df['PCS_HORA'])
+        np.where(ocup_rec < 0, 0, ocup_rec)
     )
     
-    # ============================================================
-    # LÓGICA NEC_ESTOURO_PCS_REC
-    # ------------------------------------------------------------
-    # Regra:
-    # 1) Para cada COD_PROD + UNID_FAT, pegar o último valor de
-    #    NEC_N_ATEND_PCS_REC com base no maior IND.
-    # 2) Esse valor será rateado com base em um novo percentual
-    #    calculado pela média de:
-    #       a) Percentual da linha em TOTAL_NECS_HR_REC
-    #       b) Percentual da linha em PCS_HORA
-    # 3) TOTAL_NECS_HR_REC =
-    #       (NEC_ATEND_PCS + NEC_N_ATEND_PCS_REC) / PCS_HORA
-    # 4) O grupo-base do denominador será sempre:
-    #       UNID_FAT + COD_PROD + "1"
-    # 5) Percentual final:
-    #       (PERC_TOTAL_NECS_HR_REC + PERC_PCS_HORA) / 2
-    # 6) Aplicar sobre NEC_ESTOURO_PCS_REC_TOTAL
-    # 7) Caso não exista base válida, resultado = 0
-    # ============================================================
-
-    # 1) Último NEC_N_ATEND_PCS_REC por COD_PROD + UNID_FAT
-    tab_nec_rec = (
-        df[['COD_PROD', 'UNID_FAT', 'IND', 'NEC_N_ATEND_PCS_REC']]
-        .sort_values(['COD_PROD', 'UNID_FAT', 'IND'])
-        .drop_duplicates(['COD_PROD', 'UNID_FAT'], keep='last')
-        .set_index(['COD_PROD', 'UNID_FAT'])['NEC_N_ATEND_PCS_REC']
+    # Criar coluna %_OCUP_FER, conforme regra: Se MIN(HOR_FER, HOR_CAP) for <= 0, atribuir 0, senão atribuir SUM(NEC_ESTOURO_PCS, NEC_ATEND_PCS) dividir por PCS_HORA, e depois dividir tudo isso por HOR_FER
+    ocup_fer = ((df['NEC_ESTOURO_PCS_FER'] + df['NEC_ATEND_PCS']) / df['PCS_HORA']) / df['HOR_FER']
+    df['%_OCUP_FER'] = np.where(
+        (df['HOR_FER'] == 0) | (df['PCS_HORA'] == 0),
+        0,
+        np.where(ocup_fer < 0, 0, ocup_fer)
     )
-
-    # 2) Mapear total a ratear (sem merge)
-    df['NEC_ESTOURO_PCS_REC_TOTAL'] = list(zip(df['COD_PROD'], df['UNID_FAT']))
-    df['NEC_ESTOURO_PCS_REC_TOTAL'] = (
-        df['NEC_ESTOURO_PCS_REC_TOTAL'].map(tab_nec_rec).fillna(0)
-    )
-
-    # ============================================================
-    # BASE DE CÁLCULO DO PERCENTUAL
-    # ============================================================
-
-    # 3) Criar chave de distribuição
-    df['ID_DIST_ESTOURO'] = (
-        df['UNID_FAT'].astype(str) + '|' +
-        df['COD_PROD'].astype(str) + '|' +
-        df['PRIOR_MATPAR'].astype(str)
-    )
-
-    # 4) Criar chave base fixa (PRIOR_MATPAR = 1)
-    df['ID_DIST_ESTOURO_BASE_1'] = (
-        df['UNID_FAT'].astype(str) + '|' +
-        df['COD_PROD'].astype(str) + '|1'
-    )
-
-    # 5) TOTAL_NECS_HR_REC
-    df['TOTAL_NECS_HR_REC'] = np.divide(
-        (df['NEC_ATEND_PCS'] + df['NEC_N_ATEND_PCS_REC']),
-        df['PCS_HORA'],
-        out=np.zeros(len(df), dtype=float),
-        where=df['PCS_HORA'].to_numpy() != 0
-    )
-
-    # 6) Criar dicionários de soma
-    soma_total_necs_hr_rec_dict = (
-        df.groupby('ID_DIST_ESTOURO', sort=False)['TOTAL_NECS_HR_REC']
-        .sum()
-        .to_dict()
-    )
-
-    soma_pcs_hora_dict = (
-        df.groupby('ID_DIST_ESTOURO', sort=False)['PCS_HORA']
-        .sum()
-        .to_dict()
-    )
-
-    # 7) Buscar somas do grupo base
-    df['SOMA_TOTAL_NECS_HR_REC_BASE_1'] = (
-        df['ID_DIST_ESTOURO_BASE_1'].map(soma_total_necs_hr_rec_dict).fillna(0)
-    )
-
-    df['SOMA_PCS_HORA_BASE_1'] = (
-        df['ID_DIST_ESTOURO_BASE_1'].map(soma_pcs_hora_dict).fillna(0)
-    )
-
-    # ============================================================
-    # CÁLCULO DOS PERCENTUAIS
-    # ============================================================
-
-    df['PERC_TOTAL_NECS_HR_REC'] = 0.0
-    df['PERC_PCS_HORA_REC'] = 0.0
-
-    mask_necs = df['SOMA_TOTAL_NECS_HR_REC_BASE_1'].gt(0)
-    df.loc[mask_necs, 'PERC_TOTAL_NECS_HR_REC'] = (
-        df.loc[mask_necs, 'TOTAL_NECS_HR_REC']
-        / df.loc[mask_necs, 'SOMA_TOTAL_NECS_HR_REC_BASE_1']
-    )
-
-    mask_pcs = df['SOMA_PCS_HORA_BASE_1'].gt(0)
-    df.loc[mask_pcs, 'PERC_PCS_HORA_REC'] = (
-        df.loc[mask_pcs, 'PCS_HORA']
-        / df.loc[mask_pcs, 'SOMA_PCS_HORA_BASE_1']
-    )
-
-    # Percentual final
-    df['PERC_RATEIO_ESTOURO_REC'] = (
-        df['PERC_TOTAL_NECS_HR_REC']
-        + df['PERC_PCS_HORA_REC']
-    ) / 2
-
-    # ============================================================
-    # APLICAÇÃO DO RATEIO
-    # ============================================================
-
-    df['NEC_ESTOURO_PCS_REC'] = 0.0
-
-    mask_calc = (
-        df['NEC_ESTOURO_PCS_REC_TOTAL'].gt(0)
-        & df['PERC_RATEIO_ESTOURO_REC'].gt(0)
-    )
-
-    df.loc[mask_calc, 'NEC_ESTOURO_PCS_REC'] = (
-        df.loc[mask_calc, 'PERC_RATEIO_ESTOURO_REC']
-        * df.loc[mask_calc, 'NEC_ESTOURO_PCS_REC_TOTAL']
-    )
-
-    # ============================================================
-    # LIMPEZA
-    # ============================================================
-
-    df.drop(
-        columns=[
-            'NEC_ESTOURO_PCS_REC_TOTAL',
-            'TOTAL_NECS_HR_REC',
-            'SOMA_TOTAL_NECS_HR_REC_BASE_1',
-            'SOMA_PCS_HORA_BASE_1',
-            'PERC_TOTAL_NECS_HR_REC',
-            'PERC_PCS_HORA_REC',
-            'PERC_RATEIO_ESTOURO_REC',
-            'ID_DIST_ESTOURO_BASE_1'
-        ],
-        inplace=True,
-        errors='ignore'
-    )
-
-    # ============================================================
-    # CONVERSÃO PARA HORA
-    # ============================================================
-
-    df['NEC_ESTOURO_HR_REC'] = np.divide(
-        df['NEC_ESTOURO_PCS_REC'],
-        df['PCS_HORA'],
-        out=np.zeros(len(df), dtype=float),
-        where=df['PCS_HORA'].to_numpy() != 0
-    )
-
-    # ============================================================
-    # LÓGICA NEC_ESTOURO_PCS_FER
-    # ------------------------------------------------------------
-    # Regra:
-    # 1) Para cada COD_PROD + UNID_FAT, pegar o último valor de
-    #    NEC_N_ATEND_PCS_FER com base no maior IND.
-    # 2) Esse valor será rateado com base em um novo percentual
-    #    calculado pela média de:
-    #       a) Percentual da linha em TOTAL_NECS_HR_FER
-    #       b) Percentual da linha em PCS_HORA
-    # 3) TOTAL_NECS_HR_FER =
-    #       (NEC_ATEND_PCS + NEC_N_ATEND_PCS_FER) / PCS_HORA
-    # 4) O grupo-base do denominador será sempre:
-    #       UNID_FAT + COD_PROD + "1"
-    # 5) Percentual final:
-    #       (PERC_TOTAL_NECS_HR_FER + PERC_PCS_HORA_FER) / 2
-    # 6) Aplicar sobre NEC_ESTOURO_PCS_FER_TOTAL
-    # 7) Caso não exista base válida, resultado = 0
-    # ============================================================
-
-    # 1) Último NEC_N_ATEND_PCS_FER por COD_PROD + UNID_FAT
-    tab_nec_fer = (
-        df[['COD_PROD', 'UNID_FAT', 'IND', 'NEC_N_ATEND_PCS_FER']]
-        .sort_values(['COD_PROD', 'UNID_FAT', 'IND'])
-        .drop_duplicates(['COD_PROD', 'UNID_FAT'], keep='last')
-        .set_index(['COD_PROD', 'UNID_FAT'])['NEC_N_ATEND_PCS_FER']
-    )
-
-    # 2) Mapear total a ratear (sem merge)
-    df['NEC_ESTOURO_PCS_FER_TOTAL'] = list(zip(df['COD_PROD'], df['UNID_FAT']))
-    df['NEC_ESTOURO_PCS_FER_TOTAL'] = (
-        df['NEC_ESTOURO_PCS_FER_TOTAL'].map(tab_nec_fer).fillna(0)
-    )
-
-    # ============================================================
-    # BASE DE CÁLCULO DO PERCENTUAL
-    # ============================================================
-
-    # 3) Criar chave de distribuição
-    df['ID_DIST_ESTOURO'] = (
-        df['UNID_FAT'].astype(str) + '|' +
-        df['COD_PROD'].astype(str) + '|' +
-        df['PRIOR_MATPAR'].astype(str)
-    )
-
-    # 4) Criar chave base fixa (PRIOR_MATPAR = 1)
-    df['ID_DIST_ESTOURO_BASE_1'] = (
-        df['UNID_FAT'].astype(str) + '|' +
-        df['COD_PROD'].astype(str) + '|1'
-    )
-
-    # 5) TOTAL_NECS_HR_FER
-    df['TOTAL_NECS_HR_FER'] = np.divide(
-        (df['NEC_ATEND_PCS'] + df['NEC_N_ATEND_PCS_FER']),
-        df['PCS_HORA'],
-        out=np.zeros(len(df), dtype=float),
-        where=df['PCS_HORA'].to_numpy() != 0
-    )
-
-    # 6) Criar dicionários de soma
-    soma_total_necs_hr_fer_dict = (
-        df.groupby('ID_DIST_ESTOURO', sort=False)['TOTAL_NECS_HR_FER']
-        .sum()
-        .to_dict()
-    )
-
-    soma_pcs_hora_dict = (
-        df.groupby('ID_DIST_ESTOURO', sort=False)['PCS_HORA']
-        .sum()
-        .to_dict()
-    )
-
-    # 7) Buscar somas do grupo base
-    df['SOMA_TOTAL_NECS_HR_FER_BASE_1'] = (
-        df['ID_DIST_ESTOURO_BASE_1'].map(soma_total_necs_hr_fer_dict).fillna(0)
-    )
-
-    df['SOMA_PCS_HORA_BASE_1'] = (
-        df['ID_DIST_ESTOURO_BASE_1'].map(soma_pcs_hora_dict).fillna(0)
-    )
-
-    # ============================================================
-    # CÁLCULO DOS PERCENTUAIS
-    # ============================================================
-
-    df['PERC_TOTAL_NECS_HR_FER'] = 0.0
-    df['PERC_PCS_HORA_FER'] = 0.0
-
-    mask_necs = df['SOMA_TOTAL_NECS_HR_FER_BASE_1'].gt(0)
-    df.loc[mask_necs, 'PERC_TOTAL_NECS_HR_FER'] = (
-        df.loc[mask_necs, 'TOTAL_NECS_HR_FER']
-        / df.loc[mask_necs, 'SOMA_TOTAL_NECS_HR_FER_BASE_1']
-    )
-
-    mask_pcs = df['SOMA_PCS_HORA_BASE_1'].gt(0)
-    df.loc[mask_pcs, 'PERC_PCS_HORA_FER'] = (
-        df.loc[mask_pcs, 'PCS_HORA']
-        / df.loc[mask_pcs, 'SOMA_PCS_HORA_BASE_1']
-    )
-
-    # 8) Percentual final
-    df['PERC_RATEIO_ESTOURO_FER'] = (
-        df['PERC_TOTAL_NECS_HR_FER']
-        + df['PERC_PCS_HORA_FER']
-    ) / 2
-
-    # ============================================================
-    # APLICAÇÃO DO RATEIO
-    # ============================================================
-
-    # 9) Inicializar resultado
-    df['NEC_ESTOURO_PCS_FER'] = 0.0
-
-    # 10) Aplicar rateio
-    mask_calc = (
-        df['NEC_ESTOURO_PCS_FER_TOTAL'].gt(0)
-        & df['PERC_RATEIO_ESTOURO_FER'].gt(0)
-    )
-
-    df.loc[mask_calc, 'NEC_ESTOURO_PCS_FER'] = (
-        df.loc[mask_calc, 'PERC_RATEIO_ESTOURO_FER']
-        * df.loc[mask_calc, 'NEC_ESTOURO_PCS_FER_TOTAL']
-    )
-
-    # ============================================================
-    # LIMPEZA
-    # ============================================================
-
-    df.drop(
-        columns=[
-            'NEC_ESTOURO_PCS_FER_TOTAL',
-            'TOTAL_NECS_HR_FER',
-            'SOMA_TOTAL_NECS_HR_FER_BASE_1',
-            'SOMA_PCS_HORA_BASE_1',
-            'PERC_TOTAL_NECS_HR_FER',
-            'PERC_PCS_HORA_FER',
-            'PERC_RATEIO_ESTOURO_FER',
-            'ID_DIST_ESTOURO_BASE_1'
-        ],
-        inplace=True,
-        errors='ignore'
-    )
-
-    # ============================================================
-    # CONVERSÃO PARA HORA
-    # ============================================================
-
-    df['NEC_ESTOURO_HR_FER'] = np.divide(
-        df['NEC_ESTOURO_PCS_FER'],
-        df['PCS_HORA'],
-        out=np.zeros(len(df), dtype=float),
-        where=df['PCS_HORA'].to_numpy() != 0
-    )
-
-    # ============================================================
-    # LÓGICA % OCUPAÇÃO REC
-    # ------------------------------------------------------------
-    # Regra:
-    # Se HOR_REC <= 0 ou PCS_HORA <= 0 -> 0
-    # Senão:
-    #   ((NEC_ESTOURO_PCS_REC + NEC_ATEND_PCS) / PCS_HORA) / HOR_REC
-    # Garantir mínimo 0
-    # ============================================================
-
-    base_ocup_rec = np.divide(
-        (df['NEC_ESTOURO_PCS_REC'] + df['NEC_ATEND_PCS']),
-        df['PCS_HORA'],
-        out=np.zeros(len(df), dtype=float),
-        where=df['PCS_HORA'].to_numpy() != 0
-    )
-
-    df['%_OCUP_REC'] = np.divide(
-        base_ocup_rec,
-        df['HOR_REC'],
-        out=np.zeros(len(df), dtype=float),
-        where=df['HOR_REC'].to_numpy() != 0
-    )
-
-    df['%_OCUP_REC'] = np.maximum(0, df['%_OCUP_REC'])
-
-    # ============================================================
-    # LÓGICA % OCUPAÇÃO FER
-    # ------------------------------------------------------------
-    # Regra:
-    # Se HOR_FER <= 0 ou PCS_HORA <= 0 -> 0
-    # Senão:
-    #   ((NEC_ESTOURO_PCS_FER + NEC_ATEND_PCS) / PCS_HORA) / HOR_FER
-    # Garantir mínimo 0
-    # ============================================================
-
-    base_ocup_fer = np.divide(
-        (df['NEC_ESTOURO_PCS_FER'] + df['NEC_ATEND_PCS']),
-        df['PCS_HORA'],
-        out=np.zeros(len(df), dtype=float),
-        where=df['PCS_HORA'].to_numpy() != 0
-    )
-
-    df['%_OCUP_FER'] = np.divide(
-        base_ocup_fer,
-        df['HOR_FER'],
-        out=np.zeros(len(df), dtype=float),
-        where=df['HOR_FER'].to_numpy() != 0
-    )
-
-    df['%_OCUP_FER'] = np.maximum(0, df['%_OCUP_FER'])
-
-    # ============================================================
-    # LÓGICA HORAS OCUPADAS
-    # ============================================================
-
+    
+    # Criar coluna HR_OCUP_FER
     df['HR_OCUP_FER'] = df['HOR_FER'] * df['%_OCUP_FER']
+    # Criar coluna HR_OCUP_REC
     df['HR_OCUP_REC'] = df['HOR_REC'] * df['%_OCUP_REC']
-
+    
     return df
 
 # --------------------- ### Explodir Estruturas de Produção ### ---------------------
