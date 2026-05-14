@@ -22,6 +22,7 @@ def calcular_distrib_capacidade(df, lote_min_flag, multiplo_emb_flag):
 
     id_recurso = df["ID_RECURSO"].fillna("").astype(str).to_numpy()
     id_ferramenta = df["ID_FERRAMENTA"].fillna("").astype(str).to_numpy()
+    id_prod_unid_fat = df["ID_PROD_UNID_FAT"].fillna("").astype(str).to_numpy()
 
     nec_pcs = pd.to_numeric(df["NEC_PCS"], errors="coerce").fillna(0.0).to_numpy(dtype=float)
     pcs_hora = pd.to_numeric(df["PCS_HORA"], errors="coerce").fillna(0.0).to_numpy(dtype=float)
@@ -85,13 +86,20 @@ def calcular_distrib_capacidade(df, lote_min_flag, multiplo_emb_flag):
     # ============================================================
     # Loop sequencial necessário pela regra de saldo acumulado
     # ============================================================
+    nec_atend_acum_por_prod = defaultdict(float)
+    
     for i in range(n):
+        
+        # - NEC_PCS da linha que questão, deduzindo a soma do NEC_ATEND_PCS das linhas anteriores com mesma chave de ID_PROD_UNID_FAT
+        # Necessidade restante da linha atual,
+        # descontando o que já foi atendido anteriormente
+        # para o mesmo ID_PROD_UNID_FAT.
+        chave_prod = id_prod_unid_fat[i]
 
-        # Herança de NEC não atendida da linha anterior
-        if i > 0 and (prior_matpar[i] != 1 or prior_rot[i] != 1):
-            nec_pcs_i = nec_nao_pcs[i - 1]
-        else:
-            nec_pcs_i = nec_pcs[i]
+        nec_pcs_i = nec_pcs[i] - nec_atend_acum_por_prod[chave_prod]
+
+        if nec_pcs_i < 0.0:
+            nec_pcs_i = 0.0
 
         if nec_pcs_i > 0.0:
             v = nec_pcs_i if nec_pcs_i > limit_pcs[i] else limit_pcs[i]
@@ -144,6 +152,7 @@ def calcular_distrib_capacidade(df, lote_min_flag, multiplo_emb_flag):
 
         rec_nec_atend_total[r] += nah
         fer_nec_atend_total[f] += nah
+        nec_atend_acum_por_prod[chave_prod] += nap
 
         nna_pcs = nec_pcs_i - nap
 
