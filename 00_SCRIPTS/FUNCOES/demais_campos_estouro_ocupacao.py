@@ -14,11 +14,11 @@ def calcular_demais_campos(df):
     prior_matpar = df["PRIOR_MATPAR"].to_numpy()
     prior_rot = df["PRIOR_ROT"].to_numpy()
 
-    id_ult = df["ID_ULT_PRIORI"]
+    id_pri = df["ID_PRI_PRIORI"]
     id_prod = df["ID_PROD_UNID_FAT"]
     id_ant = df["ID_PROD_UNID_FAT_ANT"]
 
-    id_ult_notna = id_ult.notna().to_numpy()
+    id_pri_notna = id_pri.notna().to_numpy()
 
     nec_nao_atend_pcs = pd.to_numeric(df["NEC_NAO_ATEND_PCS"], errors="coerce").fillna(0.0).to_numpy()
     pcs_hora = pd.to_numeric(df["PCS_HORA"], errors="coerce").fillna(0.0).to_numpy()
@@ -30,19 +30,19 @@ def calcular_demais_campos(df):
     hor_rec = pd.to_numeric(df["HOR_REC"], errors="coerce").fillna(0.0).to_numpy()
     hor_fer = pd.to_numeric(df["HOR_FER"], errors="coerce").fillna(0.0).to_numpy()
 
-    mask_prior_ult = (prior_matpar == 1) & id_ult_notna
+    mask_prior_pri = (prior_matpar == 1) & id_pri_notna
     mask_prior_rot = (prior_matpar == 1) & (prior_rot == 1)
 
     # ============================================================
     # NEC_ESTOURO_PCS
     # Regra original:
     # tab_NEC_N_ATEND_PCS:
-    # - ID_ULT_PRIORI notna
+    # - ID_PRI_PRIORI notna
     # - NEC_NAO_ATEND_PCS > 0
     # Depois set_index(ID_PROD_UNID_FAT).to_dict()
     # Em duplicados, o último prevalece.
     # ============================================================
-    mask_tab_estouro = (nec_nao_atend_pcs > 0) & id_ult_notna
+    mask_tab_estouro = (nec_nao_atend_pcs > 0) & id_pri_notna
 
     serie_estouro = pd.Series(
         nec_nao_atend_pcs[mask_tab_estouro],
@@ -54,9 +54,9 @@ def calcular_demais_campos(df):
 
     nec_estouro_pcs = np.zeros(n, dtype=float)
 
-    if mask_prior_ult.any() and not serie_estouro.empty:
-        nec_estouro_pcs[mask_prior_ult] = (
-            id_prod[mask_prior_ult]
+    if mask_prior_pri.any() and not serie_estouro.empty:
+        nec_estouro_pcs[mask_prior_pri] = (
+            id_prod[mask_prior_pri]
             .map(serie_estouro)
             .fillna(0.0)
             .to_numpy(dtype=float)
@@ -124,15 +124,15 @@ def calcular_demais_campos(df):
     # NEC_ESTOURO_PCS_REC / FER
     # Regra original:
     # tab_NEC_N_ATEND_PCS_REC_FER:
-    # - ID_ULT_PRIORI notna
+    # - ID_PRI_PRIORI notna
     # - REC > 0 ou FER > 0
     # Depois:
-    # set_index(ID_ULT_PRIORI).to_dict()
+    # set_index(ID_PRI_PRIORI).to_dict()
     # Busca usando ID_PROD_UNID_FAT.
     # Em duplicados, o último prevalece.
     # ============================================================
     mask_tab_rec_fer = (
-        id_ult_notna
+        id_pri_notna
         & (
             (nec_n_atend_pcs_rec > 0)
             | (nec_n_atend_pcs_fer > 0)
@@ -141,12 +141,12 @@ def calcular_demais_campos(df):
 
     serie_rec = pd.Series(
         nec_n_atend_pcs_rec[mask_tab_rec_fer],
-        index=id_ult[mask_tab_rec_fer]
+        index=id_pri[mask_tab_rec_fer]
     )
 
     serie_fer = pd.Series(
         nec_n_atend_pcs_fer[mask_tab_rec_fer],
-        index=id_ult[mask_tab_rec_fer]
+        index=id_pri[mask_tab_rec_fer]
     )
 
     if not serie_rec.empty:
@@ -158,17 +158,17 @@ def calcular_demais_campos(df):
     nec_estouro_pcs_rec = np.zeros(n, dtype=float)
     nec_estouro_pcs_fer = np.zeros(n, dtype=float)
 
-    if mask_prior_ult.any() and not serie_rec.empty:
-        nec_estouro_pcs_rec[mask_prior_ult] = (
-            id_prod[mask_prior_ult]
+    if mask_prior_pri.any() and not serie_rec.empty:
+        nec_estouro_pcs_rec[mask_prior_pri] = (
+            id_prod[mask_prior_pri]
             .map(serie_rec)
             .fillna(0.0)
             .to_numpy(dtype=float)
         )
 
-    if mask_prior_ult.any() and not serie_fer.empty:
-        nec_estouro_pcs_fer[mask_prior_ult] = (
-            id_prod[mask_prior_ult]
+    if mask_prior_pri.any() and not serie_fer.empty:
+        nec_estouro_pcs_fer[mask_prior_pri] = (
+            id_prod[mask_prior_pri]
             .map(serie_fer)
             .fillna(0.0)
             .to_numpy(dtype=float)

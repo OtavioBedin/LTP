@@ -15,6 +15,7 @@ MODULOS = [
     "matriz_logica_cortes_horas",
     "atualizar_ltp_necessidade_componentes",
     "decomposicao_nec_pcs_precisao_corte",
+    "migrar_id_pri_priori_pos_corte",
 ]
 
 
@@ -40,7 +41,6 @@ def _exportar_funcoes(modulos=None):
     globals()["monit_performance_funcoes"] = modulos["perf_motor"].monit_performance_funcoes
     globals()["contar_iteracao"] = modulos["perf_motor"].contar_iteracao
     globals()["imprimir_resumo"] = modulos["perf_motor"].imprimir_resumo
-
     globals()["calc_nec_pcs_hr"] = modulos["necessidade_pecas_horas"].calc_nec_pcs_hr
     globals()["calcular_distrib_capacidade"] = modulos["distribuicao_capacidade"].calcular_distrib_capacidade
     globals()["calcular_demais_campos"] = modulos["demais_campos_estouro_ocupacao"].calcular_demais_campos
@@ -53,7 +53,8 @@ def _exportar_funcoes(modulos=None):
     globals()["matriz_logica_cortes_horas"] = modulos["matriz_logica_cortes_horas"].matriz_logica_cortes_horas
     globals()["atualizar_ltp_comp_nec_pcs"] = modulos["atualizar_ltp_necessidade_componentes"].atualizar_ltp_comp_nec_pcs
     globals()["calcular_decomposicao_nec_pcs_para_precisao_corte"] = modulos["decomposicao_nec_pcs_precisao_corte"].calcular_decomposicao_nec_pcs_para_precisao_corte
-
+    globals()["migrar_id_pri_priori_pos_corte"] = (modulos["migrar_id_pri_priori_pos_corte"].migrar_id_pri_priori_pos_corte
+)
 
 _exportar_funcoes()
 
@@ -75,4 +76,5 @@ __all__ = [
     "matriz_logica_cortes_horas",
     "atualizar_ltp_comp_nec_pcs",
     "calcular_decomposicao_nec_pcs_para_precisao_corte",
+    "migrar_id_pri_priori_pos_corte",
 ]
