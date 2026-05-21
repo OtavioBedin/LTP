@@ -78,6 +78,8 @@ def calcular_distrib_capacidade(df, lote_min_flag, multiplo_emb_flag):
     nec_atend_hr = np.zeros(n, dtype=float)
     nec_nao_pcs = np.zeros(n, dtype=float)
     nec_nao_hr = np.zeros(n, dtype=float)
+    rec_hr_saldo_linha = np.zeros(n, dtype=float)
+    fer_hr_saldo_linha = np.zeros(n, dtype=float)
 
     usa_lote = lote_min_flag != "NAO"
     usa_emb = multiplo_emb_flag != "NAO"
@@ -149,6 +151,9 @@ def calcular_distrib_capacidade(df, lote_min_flag, multiplo_emb_flag):
 
         rec_saldo[r] = rc - nah if rc > nah else 0.0
         fer_saldo[f] = fc - nah if fc > nah else 0.0
+        
+        rec_hr_saldo_linha[i] = rec_saldo[r]
+        fer_hr_saldo_linha[i] = fer_saldo[f]
 
         rec_nec_atend_total[r] += nah
         fer_nec_atend_total[f] += nah
@@ -184,8 +189,8 @@ def calcular_distrib_capacidade(df, lote_min_flag, multiplo_emb_flag):
     df["NEC_ATEND_HR"] = nec_atend_hr
     df["NEC_NAO_ATEND_PCS"] = nec_nao_pcs
     df["NEC_NAO_ATEND_HR"] = nec_nao_hr
-    df["REC_HR_SALDO"] = rec_saldo[rec_idx]
-    df["FER_HR_SALDO"] = fer_saldo[fer_idx]
+    df["REC_HR_SALDO"] = rec_hr_saldo_linha
+    df["FER_HR_SALDO"] = fer_hr_saldo_linha
 
     # ============================================================
     # Outputs auxiliares
