@@ -1,0 +1,1 @@
+# Criar um LOG que mostre os produtos que foram excluidos da analise, por não constar na Matriz Parametros
