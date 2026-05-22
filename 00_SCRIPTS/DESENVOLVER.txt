@@ -1,11 +1,12 @@
-# Criar um LOG que mostre os produtos que foram excluidos da analise, por não constar na Matriz Parametros
+>>> Criar um LOG que mostre os produtos que foram excluidos da analise, por não constar na Matriz Parametros
 
-# Alocar o Estouro no primeira prioridade
+>>> Alocar o Estouro no primeira prioridade
+RESOLVIDO
 
-# Criar uma chave marcando os INDs cortados, e classificar essa chave mantendo os itens em primeiro na tabela LTP, antes de aplicar as funções, para que eles não recebam transbordo de necessidade
+>>> Criar uma chave marcando os INDs cortados, e classificar essa chave mantendo os itens em primeiro na tabela LTP, antes de aplicar as funções, para que eles não recebam transbordo de necessidade
+RESOLVIDO
 
-        # Colunas para LOG_CORTES
-        cols_log_cortes_ref = ["MES_REF", "UNID_FAT", "UNID_PROD", "MESMA_REG", "COD_PROD", "DESC_PROD", "TIPO_PROD", "COD_FER_UNID", "ALOC_REC", "PCS_HORA", "IND", "MODO_CORTE", "RASTREABILIDADE", "PCS_HORA_PI", "COD_INSUMO", "FATOR_ESTRUTURAL"]
-        cols_log_cortes_val = ["LTP_EST_SEG_PCS", "LTP_CART_ARR_MES_ANT", "LTP_CART_MES_ATUAL", "LTP_SALDO_PREV_PCS", "LTP_SALDO_PREV_PROX_MES_PCS", "LTP_COMP_NEC_PCS", "ET_PCS", "C_ARR_PCS", "C_AT_PCS", "PV_PCS", "PV_PROX_PCS", "ES_PCS", "DIF_LM_PCS", "DIF_EMB_PCS", "C_ARR_HR", "C_AT_HR", "PV_HR", "PV_PROX_HR", "ES_HR", "DIF_LM_HR", "DIF_EMB_HR", "NEC_ATEND_PCS", "NEC_ESTOURO_PCS", "%_OCUP_REC", "%_OCUP_FER"]
+>>> Ver como recalcular no DEP, os campos "%_OCUP_REC", "%_OCUP_FER" nas Colunas para LOG_CORTES
 
-Ver como recalcular no DEP, os campos "%_OCUP_REC", "%_OCUP_FER"]
+# Verificar o ALOC_REC = EX504
+# Estava com 1383% estourado, e foi pra zero
