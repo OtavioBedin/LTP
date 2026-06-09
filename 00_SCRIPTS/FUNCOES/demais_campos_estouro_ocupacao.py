@@ -1,122 +1,68 @@
 import numpy as np
 import pandas as pd
-from collections import defaultdict, deque
 
-
-# --------------------------------- ### Calculando demais campos ### --------------------------------
-# Esta função calcula campos complementares do motor de cortes:
-#
-# - NEC_ESTOURO_PCS
-# - NEC_ESTOURO_HR
-# - NEC_ARRASTE_PCS
-# - NEC_N_ATEND_PCS_REC
-# - NEC_N_ATEND_PCS_FER
-# - NEC_ESTOURO_PCS_REC
-# - NEC_ESTOURO_PCS_FER
-# - NEC_ESTOURO_HR_REC
-# - NEC_ESTOURO_HR_FER
-# - %_OCUP_REC
-# - %_OCUP_FER
-# - HR_OCUP_REC
-# - HR_OCUP_FER
-#
-# REGRA PRINCIPAL:
-# O estouro é alocado na primeira prioridade usando ID_PRI_PRIORI.
 def calcular_demais_campos(df):
     # Trabalha em uma cópia para não alterar o DataFrame original fora da função.
     df = df.copy()
 
     # Quantidade de linhas do DataFrame.
-    # Usado para criar arrays zerados com o mesmo tamanho.
     n = len(df)
 
     # ============================================================
     # Arrays base de prioridade e identificação
     # ============================================================
-
-    # PRIOR_MATPAR indica se a linha participa da regra de material/parceiro.
     prior_matpar = df["PRIOR_MATPAR"].to_numpy()
-
-    # PRIOR_ROT indica se a linha participa da regra de roteiro.
     prior_rot = df["PRIOR_ROT"].to_numpy()
 
-    # ID_PRI_PRIORI representa a primeira prioridade.
-    # Essa é a coluna central deste código.
-    # O estouro será alocado considerando essa primeira prioridade.
     id_pri = df["ID_PRI_PRIORI"]
-
-    # ID atual do produto/unidade/faturamento.
-    # Usado como chave de busca em alguns mapeamentos.
     id_prod = df["ID_PROD_UNID_FAT"]
-
-    # ID anterior do produto/unidade/faturamento.
-    # Usado para calcular o arraste.
     id_ant = df["ID_PROD_UNID_FAT_ANT"]
 
-    # Máscara booleana indicando quais linhas possuem ID_PRI_PRIORI preenchido.
     id_pri_notna = id_pri.notna().to_numpy()
 
     # ============================================================
     # Conversão dos campos numéricos
     # ============================================================
-    # Todos os campos abaixo são convertidos para número.
-    # Valores inválidos ou nulos são tratados como zero.
-    # Isso evita erro em cálculos e divisões.
-
-    # Necessidade não atendida em peças.
-    # Base principal para calcular NEC_ESTOURO_PCS.
     nec_nao_atend_pcs = pd.to_numeric(
         df["NEC_NAO_ATEND_PCS"],
         errors="coerce"
     ).fillna(0.0).to_numpy(dtype=float)
 
-    # Peças produzidas por hora.
-    # Usado para converter necessidade em peças para necessidade em horas.
     pcs_hora = pd.to_numeric(
         df["PCS_HORA"],
         errors="coerce"
     ).fillna(0.0).to_numpy(dtype=float)
 
-    # Estoque de segurança em peças.
-    # Usado para calcular NEC_ARRASTE_PCS.
     est_seg_pcs = pd.to_numeric(
         df["EST_SEG_PCS"],
         errors="coerce"
     ).fillna(0.0).to_numpy(dtype=float)
 
-    # Necessidade total em peças.
-    # Base para calcular necessidade não atendida por recurso e ferramenta.
     nec_pcs = pd.to_numeric(
         df["NEC_PCS"],
         errors="coerce"
     ).fillna(0.0).to_numpy(dtype=float)
 
-    # Capacidade variável de recurso em horas.
     rec_cap_var_hr = pd.to_numeric(
         df["REC_CAP_VAR_HR"],
         errors="coerce"
     ).fillna(0.0).to_numpy(dtype=float)
 
-    # Capacidade variável de ferramenta em horas.
     fer_cap_var_hr = pd.to_numeric(
         df["FER_CAP_VAR_HR"],
         errors="coerce"
     ).fillna(0.0).to_numpy(dtype=float)
 
-    # Necessidade já atendida em peças.
-    # Entra no cálculo de ocupação.
     nec_atend_pcs = pd.to_numeric(
         df["NEC_ATEND_PCS"],
         errors="coerce"
     ).fillna(0.0).to_numpy(dtype=float)
 
-    # Horas disponíveis de recurso.
     hor_rec = pd.to_numeric(
         df["HOR_REC"],
         errors="coerce"
     ).fillna(0.0).to_numpy(dtype=float)
 
-    # Horas disponíveis de ferramenta.
     hor_fer = pd.to_numeric(
         df["HOR_FER"],
         errors="coerce"
@@ -125,96 +71,191 @@ def calcular_demais_campos(df):
     # ============================================================
     # Máscaras de regra
     # ============================================================
-
-    # Linhas elegíveis para receber estouro pela primeira prioridade.
-    #
-    # Regra:
-    # - PRIOR_MATPAR precisa ser 1;
-    # - ID_PRI_PRIORI precisa estar preenchido.
     mask_prior_pri = (prior_matpar == 1) & id_pri_notna
-
-    # Linhas elegíveis para cálculo de arraste.
-    #
-    # Regra:
-    # - PRIOR_MATPAR precisa ser 1;
-    # - PRIOR_ROT precisa ser 1.
     mask_prior_rot = (prior_matpar == 1) & (prior_rot == 1)
 
     # ============================================================
-    # NEC_ESTOURO_PCS
+    # Helpers internos
     # ============================================================
-    # Objetivo:
-    # Calcular o estouro em peças e alocar na primeira prioridade.
-    #
-    # Regra:
-    # 1. Considera apenas linhas com NEC_NAO_ATEND_PCS > 0;
-    # 2. Considera apenas linhas com ID_PRI_PRIORI preenchido;
-    # 3. Cria uma série indexada por ID_PROD_UNID_FAT;
-    # 4. Em duplicidade de ID_PROD_UNID_FAT, mantém o último valor;
-    # 5. Busca o valor pelo próprio ID_PROD_UNID_FAT;
-    # 6. Aplica somente nas linhas elegíveis por mask_prior_pri.
-    # ============================================================
+    chaves_dist_estouro = [
+        df["UNID_FAT"],
+        df["COD_PROD"],
+        df["PRIOR_MATPAR"],
+    ]
 
-    mask_tab_estouro = (nec_nao_atend_pcs > 0) & id_pri_notna
+    pcs_hora_s = pd.Series(pcs_hora, index=df.index)
 
-    serie_estouro = pd.Series(
-        nec_nao_atend_pcs[mask_tab_estouro],
-        index=id_prod[mask_tab_estouro]
-    )
+    def dividir_array(numerador, denominador):
+        return np.divide(
+            numerador,
+            denominador,
+            out=np.zeros(n, dtype=float),
+            where=denominador != 0
+        )
 
-    # Se houver IDs duplicados, mantém o último valor encontrado.
-    # Isso replica o comportamento de um set_index(...).to_dict(),
-    # onde a última ocorrência sobrescreve as anteriores.
-    if not serie_estouro.empty:
-        serie_estouro = serie_estouro[~serie_estouro.index.duplicated(keep="last")]
+    def montar_estouro_concentrado(
+        valores,
+        chave_origem,
+        mask_origem,
+        chave_destino,
+        mask_destino
+    ):
+        """
+        Replica a forma antiga de encontrar o valor do estouro:
+        - cria uma série por chave;
+        - em duplicidade, mantém o último valor;
+        - busca na chave de destino;
+        - aplica somente na prioridade principal.
 
-    # Inicializa o resultado zerado.
-    nec_estouro_pcs = np.zeros(n, dtype=float)
+        Depois esse valor concentrado será usado apenas como total base
+        para a nova distribuição.
+        """
 
-    # Aplica o estouro apenas nas linhas da primeira prioridade.
-    if mask_prior_pri.any() and not serie_estouro.empty:
-        nec_estouro_pcs[mask_prior_pri] = (
-            id_prod[mask_prior_pri]
-            .map(serie_estouro)
+        resultado = np.zeros(n, dtype=float)
+
+        if not mask_origem.any() or not mask_destino.any():
+            return resultado
+
+        serie = pd.Series(
+            valores[mask_origem],
+            index=chave_origem[mask_origem]
+        )
+
+        if serie.empty:
+            return resultado
+
+        serie = serie[~serie.index.duplicated(keep="last")]
+
+        resultado[mask_destino] = (
+            chave_destino[mask_destino]
+            .map(serie)
             .fillna(0.0)
             .to_numpy(dtype=float)
         )
+
+        return resultado
+
+    def distribuir_estouro(estouro_concentrado, total_nec_hr):
+        """
+        Nova regra de distribuição:
+
+        PESO_NEC_HR =
+            TOTAL_NEC_HR / soma TOTAL_NEC_HR do grupo
+
+        PESO_PCS_HORA =
+            PCS_HORA / soma PCS_HORA do grupo
+
+        PERC_DIST_ESTOURO =
+            (PESO_NEC_HR + PESO_PCS_HORA) / 2
+
+        NEC_ESTOURO_PCS novo =
+            total do estouro concentrado no grupo * PERC_DIST_ESTOURO
+
+        Chave lógica:
+            UNID_FAT + COD_PROD + PRIOR_MATPAR
+
+        Não cria ID_DIST_ESTOURO físico no DataFrame.
+        """
+
+        total_nec_hr_s = pd.Series(total_nec_hr, index=df.index).fillna(0.0)
+        estouro_concentrado_s = pd.Series(estouro_concentrado, index=df.index)
+
+        total_nec_hr_prior_1 = total_nec_hr_s.where(mask_prior_pri, 0.0)
+        pcs_hora_prior_1 = pcs_hora_s.where(mask_prior_pri, 0.0)
+        estouro_prior_1 = estouro_concentrado_s.where(mask_prior_pri, 0.0)
+
+        soma_total_nec_hr_grupo = (
+            total_nec_hr_prior_1
+            .groupby(chaves_dist_estouro, sort=False)
+            .transform("sum")
+        )
+
+        soma_pcs_hora_grupo = (
+            pcs_hora_prior_1
+            .groupby(chaves_dist_estouro, sort=False)
+            .transform("sum")
+        )
+
+        total_estouro_grupo = (
+            estouro_prior_1
+            .groupby(chaves_dist_estouro, sort=False)
+            .transform("sum")
+        )
+
+        arr_total_nec_hr = total_nec_hr_s.to_numpy(dtype=float)
+        arr_pcs_hora = pcs_hora_s.to_numpy(dtype=float)
+
+        arr_soma_total_nec_hr = soma_total_nec_hr_grupo.to_numpy(dtype=float)
+        arr_soma_pcs_hora = soma_pcs_hora_grupo.to_numpy(dtype=float)
+        arr_total_estouro_grupo = total_estouro_grupo.to_numpy(dtype=float)
+
+        peso_nec_hr = np.divide(
+            arr_total_nec_hr,
+            arr_soma_total_nec_hr,
+            out=np.zeros(n, dtype=float),
+            where=mask_prior_pri & (arr_soma_total_nec_hr != 0)
+        )
+
+        peso_pcs_hora = np.divide(
+            arr_pcs_hora,
+            arr_soma_pcs_hora,
+            out=np.zeros(n, dtype=float),
+            where=mask_prior_pri & (arr_soma_pcs_hora != 0)
+        )
+
+        perc_dist_estouro = (peso_nec_hr + peso_pcs_hora) / 2.0
+
+        resultado = np.where(
+            mask_prior_pri,
+            arr_total_estouro_grupo * perc_dist_estouro,
+            0.0
+        )
+
+        return resultado
+
+    # ============================================================
+    # NEC_ESTOURO_PCS
+    # Antes: concentrava na primeira prioridade.
+    # Agora: encontra o mesmo valor e distribui.
+    #
+    # TOTAL_NEC_HR geral:
+    # (NEC_ATEND_PCS + NEC_NAO_ATEND_PCS) / PCS_HORA
+    # ============================================================
+    mask_tab_estouro = (nec_nao_atend_pcs > 0) & id_pri_notna
+
+    nec_estouro_pcs_concentrado = montar_estouro_concentrado(
+        valores=nec_nao_atend_pcs,
+        chave_origem=id_prod,
+        mask_origem=mask_tab_estouro,
+        chave_destino=id_prod,
+        mask_destino=mask_prior_pri
+    )
+
+    total_nec_hr = dividir_array(
+        nec_atend_pcs + nec_nao_atend_pcs,
+        pcs_hora
+    )
+
+    nec_estouro_pcs = distribuir_estouro(
+        estouro_concentrado=nec_estouro_pcs_concentrado,
+        total_nec_hr=total_nec_hr
+    )
 
     df["NEC_ESTOURO_PCS"] = nec_estouro_pcs
 
     # ============================================================
     # NEC_ESTOURO_HR
+    # Recalcula horas a partir do novo NEC_ESTOURO_PCS.
     # ============================================================
-    # Converte NEC_ESTOURO_PCS para horas.
-    #
-    # Fórmula:
-    # NEC_ESTOURO_HR = NEC_ESTOURO_PCS / PCS_HORA
-    #
-    # Se PCS_HORA for zero, retorna zero para evitar divisão inválida.
-    # ============================================================
-
-    df["NEC_ESTOURO_HR"] = np.divide(
+    df["NEC_ESTOURO_HR"] = dividir_array(
         nec_estouro_pcs,
-        pcs_hora,
-        out=np.zeros(n, dtype=float),
-        where=pcs_hora != 0
+        pcs_hora
     )
 
     # ============================================================
     # NEC_ARRASTE_PCS
+    # Mantém a lógica original, mas agora baseada no estouro distribuído.
     # ============================================================
-    # Objetivo:
-    # Calcular quanto do estouro deve ser arrastado para o item anterior.
-    #
-    # Fórmula base:
-    # NEC_ARRASTE_BASE = max(NEC_ESTOURO_PCS - EST_SEG_PCS, 0)
-    #
-    # Depois:
-    # - monta uma série indexada por ID_PROD_UNID_FAT;
-    # - busca nas linhas elegíveis usando ID_PROD_UNID_FAT_ANT;
-    # - aplica apenas quando PRIOR_MATPAR = 1 e PRIOR_ROT = 1.
-    # ============================================================
-
     nec_arraste_base = np.maximum(nec_estouro_pcs - est_seg_pcs, 0.0)
 
     serie_arraste = pd.Series(
@@ -222,14 +263,11 @@ def calcular_demais_campos(df):
         index=id_prod
     )
 
-    # Em caso de ID duplicado, mantém o último valor.
     if not serie_arraste.empty:
         serie_arraste = serie_arraste[~serie_arraste.index.duplicated(keep="last")]
 
-    # Inicializa o arraste zerado.
     nec_arraste_pcs = np.zeros(n, dtype=float)
 
-    # Busca o arraste pelo ID anterior.
     if mask_prior_rot.any() and not serie_arraste.empty:
         nec_arraste_pcs[mask_prior_rot] = (
             id_ant[mask_prior_rot]
@@ -242,14 +280,8 @@ def calcular_demais_campos(df):
 
     # ============================================================
     # NEC_N_ATEND_PCS_REC
+    # Mantém o cálculo original.
     # ============================================================
-    # Calcula a necessidade não atendida considerando capacidade de recurso.
-    #
-    # Fórmula:
-    # NEC_N_ATEND_PCS_REC =
-    # max(NEC_PCS - REC_CAP_VAR_HR * PCS_HORA, 0)
-    # ============================================================
-
     nec_n_atend_pcs_rec = np.maximum(
         0.0,
         nec_pcs - (rec_cap_var_hr * pcs_hora)
@@ -257,14 +289,8 @@ def calcular_demais_campos(df):
 
     # ============================================================
     # NEC_N_ATEND_PCS_FER
+    # Mantém o cálculo original.
     # ============================================================
-    # Calcula a necessidade não atendida considerando capacidade de ferramenta.
-    #
-    # Fórmula:
-    # NEC_N_ATEND_PCS_FER =
-    # max(NEC_PCS - FER_CAP_VAR_HR * PCS_HORA, 0)
-    # ============================================================
-
     nec_n_atend_pcs_fer = np.maximum(
         0.0,
         nec_pcs - (fer_cap_var_hr * pcs_hora)
@@ -275,21 +301,17 @@ def calcular_demais_campos(df):
 
     # ============================================================
     # NEC_ESTOURO_PCS_REC / NEC_ESTOURO_PCS_FER
-    # ============================================================
-    # Objetivo:
-    # Calcular o estouro em peças para recurso e ferramenta,
-    # alocando na primeira prioridade.
+    # Antes: concentrava REC/FER na primeira prioridade.
+    # Agora: encontra o mesmo valor e distribui.
     #
-    # Regra:
-    # 1. Considera linhas com ID_PRI_PRIORI preenchido;
-    # 2. Considera linhas onde REC ou FER possuem necessidade não atendida;
-    # 3. Cria uma série REC indexada por ID_PRI_PRIORI;
-    # 4. Cria uma série FER indexada por ID_PRI_PRIORI;
-    # 5. Em duplicidade, mantém o último valor;
-    # 6. Busca usando ID_PROD_UNID_FAT;
-    # 7. Aplica nas linhas da primeira prioridade.
+    # REC:
+    # TOTAL_NEC_HR_REC =
+    # (NEC_ATEND_PCS + NEC_N_ATEND_PCS_REC) / PCS_HORA
+    #
+    # FER:
+    # TOTAL_NEC_HR_FER =
+    # (NEC_ATEND_PCS + NEC_N_ATEND_PCS_FER) / PCS_HORA
     # ============================================================
-
     mask_tab_rec_fer = (
         id_pri_notna
         & (
@@ -298,100 +320,70 @@ def calcular_demais_campos(df):
         )
     )
 
-    serie_rec = pd.Series(
-        nec_n_atend_pcs_rec[mask_tab_rec_fer],
-        index=id_pri[mask_tab_rec_fer]
+    nec_estouro_pcs_rec_concentrado = montar_estouro_concentrado(
+        valores=nec_n_atend_pcs_rec,
+        chave_origem=id_pri,
+        mask_origem=mask_tab_rec_fer,
+        chave_destino=id_prod,
+        mask_destino=mask_prior_pri
     )
 
-    serie_fer = pd.Series(
-        nec_n_atend_pcs_fer[mask_tab_rec_fer],
-        index=id_pri[mask_tab_rec_fer]
+    nec_estouro_pcs_fer_concentrado = montar_estouro_concentrado(
+        valores=nec_n_atend_pcs_fer,
+        chave_origem=id_pri,
+        mask_origem=mask_tab_rec_fer,
+        chave_destino=id_prod,
+        mask_destino=mask_prior_pri
     )
 
-    # Em caso de ID_PRI_PRIORI duplicado, mantém o último valor.
-    if not serie_rec.empty:
-        serie_rec = serie_rec[~serie_rec.index.duplicated(keep="last")]
+    total_nec_hr_rec = dividir_array(
+        nec_atend_pcs + nec_n_atend_pcs_rec,
+        pcs_hora
+    )
 
-    if not serie_fer.empty:
-        serie_fer = serie_fer[~serie_fer.index.duplicated(keep="last")]
+    total_nec_hr_fer = dividir_array(
+        nec_atend_pcs + nec_n_atend_pcs_fer,
+        pcs_hora
+    )
 
-    # Inicializa os resultados zerados.
-    nec_estouro_pcs_rec = np.zeros(n, dtype=float)
-    nec_estouro_pcs_fer = np.zeros(n, dtype=float)
+    nec_estouro_pcs_rec = distribuir_estouro(
+        estouro_concentrado=nec_estouro_pcs_rec_concentrado,
+        total_nec_hr=total_nec_hr_rec
+    )
 
-    # Aloca estouro de recurso nas linhas da primeira prioridade.
-    if mask_prior_pri.any() and not serie_rec.empty:
-        nec_estouro_pcs_rec[mask_prior_pri] = (
-            id_prod[mask_prior_pri]
-            .map(serie_rec)
-            .fillna(0.0)
-            .to_numpy(dtype=float)
-        )
-
-    # Aloca estouro de ferramenta nas linhas da primeira prioridade.
-    if mask_prior_pri.any() and not serie_fer.empty:
-        nec_estouro_pcs_fer[mask_prior_pri] = (
-            id_prod[mask_prior_pri]
-            .map(serie_fer)
-            .fillna(0.0)
-            .to_numpy(dtype=float)
-        )
+    nec_estouro_pcs_fer = distribuir_estouro(
+        estouro_concentrado=nec_estouro_pcs_fer_concentrado,
+        total_nec_hr=total_nec_hr_fer
+    )
 
     df["NEC_ESTOURO_PCS_REC"] = nec_estouro_pcs_rec
     df["NEC_ESTOURO_PCS_FER"] = nec_estouro_pcs_fer
 
     # ============================================================
     # NEC_ESTOURO_HR_REC
+    # Recalcula horas a partir do novo NEC_ESTOURO_PCS_REC.
     # ============================================================
-    # Converte o estouro de recurso de peças para horas.
-    #
-    # Fórmula:
-    # NEC_ESTOURO_HR_REC = NEC_ESTOURO_PCS_REC / PCS_HORA
-    # ============================================================
-
-    df["NEC_ESTOURO_HR_REC"] = np.divide(
+    df["NEC_ESTOURO_HR_REC"] = dividir_array(
         nec_estouro_pcs_rec,
-        pcs_hora,
-        out=np.zeros(n, dtype=float),
-        where=pcs_hora != 0
+        pcs_hora
     )
 
     # ============================================================
     # NEC_ESTOURO_HR_FER
+    # Recalcula horas a partir do novo NEC_ESTOURO_PCS_FER.
     # ============================================================
-    # Converte o estouro de ferramenta de peças para horas.
-    #
-    # Fórmula:
-    # NEC_ESTOURO_HR_FER = NEC_ESTOURO_PCS_FER / PCS_HORA
-    # ============================================================
-
-    df["NEC_ESTOURO_HR_FER"] = np.divide(
+    df["NEC_ESTOURO_HR_FER"] = dividir_array(
         nec_estouro_pcs_fer,
-        pcs_hora,
-        out=np.zeros(n, dtype=float),
-        where=pcs_hora != 0
+        pcs_hora
     )
 
     # ============================================================
     # %_OCUP_REC
+    # Mantém o cálculo original, usando o novo NEC_ESTOURO_PCS_REC.
     # ============================================================
-    # Calcula o percentual de ocupação do recurso.
-    #
-    # Fórmula:
-    # %_OCUP_REC =
-    # ((NEC_ESTOURO_PCS_REC + NEC_ATEND_PCS) / PCS_HORA) / HOR_REC
-    #
-    # Regras:
-    # - se PCS_HORA = 0, retorna 0;
-    # - se HOR_REC = 0, retorna 0;
-    # - se o resultado for negativo, força para 0.
-    # ============================================================
-
-    hr_ocup_rec_base = np.divide(
+    hr_ocup_rec_base = dividir_array(
         nec_estouro_pcs_rec + nec_atend_pcs,
-        pcs_hora,
-        out=np.zeros(n, dtype=float),
-        where=pcs_hora != 0
+        pcs_hora
     )
 
     ocup_rec = np.divide(
@@ -405,24 +397,11 @@ def calcular_demais_campos(df):
 
     # ============================================================
     # %_OCUP_FER
+    # Mantém o cálculo original, usando o novo NEC_ESTOURO_PCS_FER.
     # ============================================================
-    # Calcula o percentual de ocupação da ferramenta.
-    #
-    # Fórmula:
-    # %_OCUP_FER =
-    # ((NEC_ESTOURO_PCS_FER + NEC_ATEND_PCS) / PCS_HORA) / HOR_FER
-    #
-    # Regras:
-    # - se PCS_HORA = 0, retorna 0;
-    # - se HOR_FER = 0, retorna 0;
-    # - se o resultado for negativo, força para 0.
-    # ============================================================
-
-    hr_ocup_fer_base = np.divide(
+    hr_ocup_fer_base = dividir_array(
         nec_estouro_pcs_fer + nec_atend_pcs,
-        pcs_hora,
-        out=np.zeros(n, dtype=float),
-        where=pcs_hora != 0
+        pcs_hora
     )
 
     ocup_fer = np.divide(
@@ -440,13 +419,6 @@ def calcular_demais_campos(df):
     # ============================================================
     # HR_OCUP_REC / HR_OCUP_FER
     # ============================================================
-    # Converte o percentual de ocupação em horas ocupadas.
-    #
-    # Fórmulas:
-    # HR_OCUP_REC = HOR_REC * %_OCUP_REC
-    # HR_OCUP_FER = HOR_FER * %_OCUP_FER
-    # ============================================================
-
     df["HR_OCUP_FER"] = hor_fer * ocup_fer
     df["HR_OCUP_REC"] = hor_rec * ocup_rec
 
