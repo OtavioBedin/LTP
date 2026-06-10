@@ -19,38 +19,34 @@ import pandas as pd
 # - HR_OCUP_REC
 # - HR_OCUP_FER
 #
-# NOVA REGRA DE ESTOURO:
+# REGRA DE ESTOURO:
 #
-# Chave para DISTRIBUIR o percentual:
-# ID_DIST_ESTOURO = UNID_FAT + COD_PROD + PRIOR_MATPAR
+# Grupo de distribuição:
+# ID_PROD_UNID_FAT
 #
-# Chave para BUSCAR o valor base do estouro:
-# ID_BUSCA_ESTOURO = UNID_FAT + COD_PROD
-#
-# TOTAL_ATEND =
+# TOTAL_ATEND:
 # - Geral: NEC_ATEND_HR + NEC_NAO_ATEND_HR
 # - REC:   NEC_ATEND_HR + NEC_N_ATEND_HR_REC
 # - FER:   NEC_ATEND_HR + NEC_N_ATEND_HR_FER
 #
-# %_DIST_ESTOURO =
-# (
-#     TOTAL_ATEND da linha / soma TOTAL_ATEND do grupo de distribuição
-#     +
-#     PCS_HORA da linha / soma PCS_HORA do grupo de distribuição
-# ) / 2
+# %_DIST_ESTOURO:
+# TOTAL_ATEND da linha / soma TOTAL_ATEND do grupo ID_PROD_UNID_FAT
 #
-# Apenas PRIOR_MATPAR = 1 participa da decomposição.
+# Todas as linhas do grupo participam.
+# Não filtra mais PRIOR_MATPAR = 1.
+# Não usa mais PCS_HORA como peso.
+# Não faz mais média entre pesos.
 #
-# NEC_ESTOURO_PCS =
-# NEC_NAO_ATEND_PCS da última linha da chave UNID_FAT + COD_PROD
+# NEC_ESTOURO_PCS:
+# NEC_NAO_ATEND_PCS da última linha do grupo ID_PROD_UNID_FAT
 # * %_DIST_ESTOURO
 #
-# NEC_ESTOURO_PCS_REC =
-# NEC_N_ATEND_PCS_REC da última linha da chave UNID_FAT + COD_PROD
+# NEC_ESTOURO_PCS_REC:
+# NEC_N_ATEND_PCS_REC da última linha do grupo ID_PROD_UNID_FAT
 # * %_DIST_ESTOURO_REC
 #
-# NEC_ESTOURO_PCS_FER =
-# NEC_N_ATEND_PCS_FER da última linha da chave UNID_FAT + COD_PROD
+# NEC_ESTOURO_PCS_FER:
+# NEC_N_ATEND_PCS_FER da última linha do grupo ID_PROD_UNID_FAT
 # * %_DIST_ESTOURO_FER
 
 
@@ -82,83 +78,44 @@ def calcular_demais_campos(df):
         """
         Calcula o percentual de distribuição do estouro.
 
+        Regra:
         %_DIST_ESTOURO =
-        (
-            TOTAL_ATEND da linha / soma TOTAL_ATEND do grupo
-            +
-            PCS_HORA da linha / soma PCS_HORA do grupo
-        ) / 2
+        TOTAL_ATEND da linha / soma TOTAL_ATEND do grupo ID_PROD_UNID_FAT
 
-        Apenas linhas com PRIOR_MATPAR = 1 participam.
-
-        Chave de distribuição:
-        UNID_FAT + COD_PROD + PRIOR_MATPAR
+        Todas as linhas do grupo participam.
         """
 
-        pct_dist = np.zeros(n, dtype="float64")
-
-        if not mask_prior_matpar_1.any():
-            return pct_dist
-
-        total_atend_prior = pd.Series(
-            total_atend_base[mask_prior_matpar_1_arr],
-            index=df.index[mask_prior_matpar_1_arr]
+        total_atend_serie = pd.Series(
+            total_atend_base,
+            index=df.index
         )
-
-        pcs_hora_prior = pd.Series(
-            pcs_hora[mask_prior_matpar_1_arr],
-            index=df.index[mask_prior_matpar_1_arr]
-        )
-
-        grupo_prior = [
-            df.loc[mask_prior_matpar_1, "UNID_FAT"],
-            df.loc[mask_prior_matpar_1, "COD_PROD"],
-            df.loc[mask_prior_matpar_1, "PRIOR_MATPAR"],
-        ]
 
         soma_total_atend = (
-            total_atend_prior
-            .groupby(grupo_prior, sort=False)
+            total_atend_serie
+            .groupby(df["ID_PROD_UNID_FAT"], sort=False)
             .transform("sum")
             .to_numpy(dtype="float64", copy=False)
         )
 
-        soma_pcs_hora = (
-            pcs_hora_prior
-            .groupby(grupo_prior, sort=False)
-            .transform("sum")
-            .to_numpy(dtype="float64", copy=False)
-        )
-
-        peso_total_atend = dividir_seguro(
-            total_atend_prior.to_numpy(dtype="float64", copy=False),
+        pct_dist = dividir_seguro(
+            total_atend_base,
             soma_total_atend
         )
-
-        peso_pcs_hora = dividir_seguro(
-            pcs_hora_prior.to_numpy(dtype="float64", copy=False),
-            soma_pcs_hora
-        )
-
-        pct_dist[mask_prior_matpar_1_arr] = (
-            peso_total_atend + peso_pcs_hora
-        ) / 2.0
 
         return pct_dist
 
     def decompor_estouro(nome_coluna_base_pcs, total_atend_base):
         """
-        Busca o valor da coluna base PCS da última linha da chave:
-        UNID_FAT + COD_PROD
+        Busca o valor da coluna base PCS da última linha do grupo ID_PROD_UNID_FAT.
 
-        Depois distribui pelo percentual calculado na chave:
-        UNID_FAT + COD_PROD + PRIOR_MATPAR
+        Depois distribui esse valor proporcionalmente ao TOTAL_ATEND
+        dentro do mesmo grupo ID_PROD_UNID_FAT.
         """
 
         pct_dist_estouro = calcular_percentual_distribuicao(total_atend_base)
 
         estouro_base_grupo = (
-            df.groupby(chaves_busca_estouro, sort=False)[nome_coluna_base_pcs]
+            df.groupby("ID_PROD_UNID_FAT", sort=False)[nome_coluna_base_pcs]
             .transform("last")
             .fillna(0.0)
             .to_numpy(dtype="float64", copy=False)
@@ -172,13 +129,7 @@ def calcular_demais_campos(df):
     prior_matpar = df["PRIOR_MATPAR"].to_numpy()
     prior_rot = df["PRIOR_ROT"].to_numpy()
 
-    mask_prior_matpar_1 = df["PRIOR_MATPAR"].eq(1)
-    mask_prior_matpar_1_arr = mask_prior_matpar_1.to_numpy()
-
     mask_prior_rot = (prior_matpar == 1) & (prior_rot == 1)
-
-    chaves_dist_estouro = ["UNID_FAT", "COD_PROD", "PRIOR_MATPAR"]
-    chaves_busca_estouro = ["UNID_FAT", "COD_PROD"]
 
     # IDs usados pela lógica antiga do arraste
     id_prod_unid_fat = df["ID_PROD_UNID_FAT"]
@@ -247,10 +198,9 @@ def calcular_demais_campos(df):
     # NEC_ESTOURO_PCS / NEC_ESTOURO_HR
     #
     # Geral:
-    # - busca base PCS por UNID_FAT + COD_PROD
     # - base PCS: NEC_NAO_ATEND_PCS
-    # - distribui por UNID_FAT + COD_PROD + PRIOR_MATPAR
-    # - total atend: NEC_ATEND_HR + NEC_NAO_ATEND_HR
+    # - grupo: ID_PROD_UNID_FAT
+    # - peso: TOTAL_ATEND_GERAL da linha / soma TOTAL_ATEND_GERAL do grupo
 
     nec_estouro_pcs = decompor_estouro(
         nome_coluna_base_pcs="NEC_NAO_ATEND_PCS",
@@ -303,10 +253,9 @@ def calcular_demais_campos(df):
     # NEC_ESTOURO_PCS_REC / NEC_ESTOURO_HR_REC
     #
     # REC:
-    # - busca base PCS por UNID_FAT + COD_PROD
     # - base PCS: NEC_N_ATEND_PCS_REC
-    # - distribui por UNID_FAT + COD_PROD + PRIOR_MATPAR
-    # - total atend: NEC_ATEND_HR + NEC_N_ATEND_HR_REC
+    # - grupo: ID_PROD_UNID_FAT
+    # - peso: TOTAL_ATEND_REC da linha / soma TOTAL_ATEND_REC do grupo
 
     nec_estouro_pcs_rec = decompor_estouro(
         nome_coluna_base_pcs="NEC_N_ATEND_PCS_REC",
@@ -325,10 +274,9 @@ def calcular_demais_campos(df):
     # NEC_ESTOURO_PCS_FER / NEC_ESTOURO_HR_FER
     #
     # FER:
-    # - busca base PCS por UNID_FAT + COD_PROD
     # - base PCS: NEC_N_ATEND_PCS_FER
-    # - distribui por UNID_FAT + COD_PROD + PRIOR_MATPAR
-    # - total atend: NEC_ATEND_HR + NEC_N_ATEND_HR_FER
+    # - grupo: ID_PROD_UNID_FAT
+    # - peso: TOTAL_ATEND_FER da linha / soma TOTAL_ATEND_FER do grupo
 
     nec_estouro_pcs_fer = decompor_estouro(
         nome_coluna_base_pcs="NEC_N_ATEND_PCS_FER",
