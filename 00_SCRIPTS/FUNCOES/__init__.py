@@ -4,6 +4,7 @@ import importlib
 MODULOS = [
     "perf_motor",
     "necessidade_pecas_horas",
+    "necessidade_pecas_horas_pos_eco",
     "distribuicao_capacidade",
     "demais_campos_estouro_ocupacao",
     "explosao_estrutura_ltp",
@@ -41,6 +42,7 @@ def _exportar_funcoes(modulos=None):
     globals()["contar_iteracao"] = modulos["perf_motor"].contar_iteracao
     globals()["imprimir_resumo"] = modulos["perf_motor"].imprimir_resumo
     globals()["calc_nec_pcs_hr"] = modulos["necessidade_pecas_horas"].calc_nec_pcs_hr
+    globals()["calc_nec_pcs_hr_pos_eco"] = modulos["necessidade_pecas_horas_pos_eco"].calc_nec_pcs_hr_pos_eco
     globals()["calcular_distrib_capacidade"] = modulos["distribuicao_capacidade"].calcular_distrib_capacidade
     globals()["calcular_demais_campos"] = modulos["demais_campos_estouro_ocupacao"].calcular_demais_campos
     globals()["explodir_estrutura_ltp"] = modulos["explosao_estrutura_ltp"].explodir_estrutura_ltp
@@ -62,6 +64,7 @@ __all__ = [
     "contar_iteracao",
     "imprimir_resumo",
     "calc_nec_pcs_hr",
+    "calc_nec_pcs_hr_pos_eco",
     "calcular_distrib_capacidade",
     "calcular_demais_campos",
     "explodir_estrutura_ltp",
