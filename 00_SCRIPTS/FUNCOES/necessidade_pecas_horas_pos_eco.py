@@ -41,13 +41,29 @@ def calc_nec_pcs_hr_pos_eco(df, inds_eco, lote_min_flag, multiplo_emb_flag):
             Quando "SIM", aplica arredondamento por QTD_EMB para PA/MR.
 
     Retorno:
-        DataFrame completo com NEC_PCS e NEC_HR recalculados.
+        df:
+            DataFrame final completo, após recalcular os INDs da ECO
+            e também os INDs fora da ECO.
+            Esta é a saída que deve voltar para bd_LTP_MES.
+
+        df_etapa_1:
+            DataFrame completo após recalcular NEC_PCS e NEC_HR somente
+            para os INDs que apareceram na ECO.
+
+        df_etapa_2:
+            DataFrame completo após recalcular NEC_PCS e NEC_HR para os
+            INDs que apareceram na ECO e também para os demais INDs.
+            Esta saída é igual ao df final, mas mantida separada para análise.
     """
 
     df = df.copy()
 
     if "IND" not in df.columns:
         raise KeyError("Coluna obrigatória não encontrada: IND")
+
+    # Normaliza flags para evitar problema com minúsculo ou espaço.
+    lote_min_flag = str(lote_min_flag).strip().upper()
+    multiplo_emb_flag = str(multiplo_emb_flag).strip().upper()
 
     # Normaliza inds_eco para set, deixando a checagem mais rápida.
     if inds_eco is None:
@@ -71,6 +87,10 @@ def calc_nec_pcs_hr_pos_eco(df, inds_eco, lote_min_flag, multiplo_emb_flag):
             multiplo_emb_flag=multiplo_emb_flag
         )
 
+    # Saída intermediária da etapa 1:
+    # neste ponto, somente os INDs que apareceram na ECO foram recalculados.
+    df_etapa_1 = df.copy()
+
     # Etapa 2:
     # depois recalcula os INDs fora da ECO.
     if mask_fora_eco.any():
@@ -81,7 +101,15 @@ def calc_nec_pcs_hr_pos_eco(df, inds_eco, lote_min_flag, multiplo_emb_flag):
             multiplo_emb_flag=multiplo_emb_flag
         )
 
-    return df
+    # Saída final da etapa 2:
+    # neste ponto, o DataFrame completo já foi recalculado.
+    df_etapa_2 = df.copy()
+
+    # Ordem do retorno:
+    # 1. df final para continuar o motor como bd_LTP_MES
+    # 2. df_etapa_1 para auditoria/análise após recalcular ECO
+    # 3. df_etapa_2 para auditoria/análise após recalcular tudo
+    return df, df_etapa_1, df_etapa_2
 
 
 def _recalcular_nec_pcs_hr_por_mask(df, mask, lote_min_flag, multiplo_emb_flag):
