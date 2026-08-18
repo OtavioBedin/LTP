@@ -1,0 +1,8 @@
+{
+  "iteracoes": 2,
+  "max_delta_final": 0.0,
+  "filhos_com_falta": 0,
+  "filhos_com_sobra": 0,
+  "falta_total": 5.353939513952355e-12,
+  "sobra_total": 0.0
+}
